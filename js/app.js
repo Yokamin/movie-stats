@@ -395,33 +395,90 @@ function viewGenres() {
 // ============================================================
 function viewPeople(role, title) {
   setTitle(title);
-  // Pre-computed and pre-sorted in data.js — no work to do here
-  const rows = DB.leaderboards[role];
+  const allRows = DB.leaderboards[role];
+  const mc      = document.getElementById('mainContent');
+  let query    = '';
+  let page     = 1;
+  let pageSize = 25;
 
-  document.getElementById('mainContent').innerHTML = `
+  mc.innerHTML = `
     <div class="view-list">
-      <div class="people-list">
-        ${rows.map((r, i) => {
-          const avatar = imgUrl(r.profile_path, 'w45');
-          const hours  = Math.round(r.runtime / 60);
-          return `
-            <a href="#person-${r.tmdb_person_id}" class="people-row">
-              <div class="people-rank-col">
-                <span class="people-rank">${i + 1}</span>
-                ${avatar
-                  ? `<img src="${avatar}" class="people-avatar" alt="${esc(r.name)}" loading="lazy">`
-                  : `<div class="people-avatar people-avatar--placeholder">${r.name[0]}</div>`}
-                <span class="people-name">${esc(r.name)}</span>
-              </div>
-              <div class="people-stats-col">
-                ${r.avg ? `<span class="rating-badge">${r.avg}</span>` : ''}
-                <span class="people-count">${r.count} title${r.count !== 1 ? 's' : ''}</span>
-                ${hours > 0 ? `<span class="people-time">${hours}h</span>` : ''}
-              </div>
-            </a>`;
-        }).join('')}
+      <div class="list-controls">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="peopleSearch" placeholder="Search…" autocomplete="off">
+        </div>
+        <div class="sort-wrap">
+          <select class="sort-select" id="pageSizeSelect">
+            <option value="25">25 per page</option>
+            <option value="50">50 per page</option>
+            <option value="100">100 per page</option>
+          </select>
+        </div>
       </div>
+      <div class="result-count" id="peopleCount"></div>
+      <div class="people-list" id="peopleList"></div>
+      <div class="pagination" id="pagination"></div>
     </div>`;
+
+  function filtered() {
+    if (!query) return allRows;
+    const q = query.toLowerCase();
+    return allRows.filter(r => r.name.toLowerCase().includes(q));
+  }
+
+  function render() {
+    const rows       = filtered();
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    page = Math.min(page, totalPages);
+    const start = (page - 1) * pageSize;
+    const slice = rows.slice(start, start + pageSize);
+
+    document.getElementById('peopleCount').textContent =
+      `${rows.length} people · page ${page} of ${totalPages}`;
+
+    document.getElementById('peopleList').innerHTML = slice.map((r, i) => {
+      const avatar = imgUrl(r.profile_path, 'w45');
+      const hours  = Math.round(r.runtime / 60);
+      return `
+        <a href="#person-${r.tmdb_person_id}" class="people-row">
+          <div class="people-rank-col">
+            <span class="people-rank">${start + i + 1}</span>
+            ${avatar
+              ? `<img src="${avatar}" class="people-avatar" alt="${esc(r.name)}" loading="lazy">`
+              : `<div class="people-avatar people-avatar--placeholder">${r.name[0]}</div>`}
+            <span class="people-name">${esc(r.name)}</span>
+          </div>
+          <div class="people-stats-col">
+            ${r.avg ? `<span class="rating-badge">${r.avg}</span>` : ''}
+            <span class="people-count">${r.count} title${r.count !== 1 ? 's' : ''}</span>
+            ${hours > 0 ? `<span class="people-time">${hours}h</span>` : ''}
+          </div>
+        </a>`;
+    }).join('');
+
+    document.getElementById('pagination').innerHTML = totalPages > 1 ? `
+      <button class="page-btn" id="pagePrev" ${page === 1 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span class="page-indicator">${page} / ${totalPages}</span>
+      <button class="page-btn" id="pageNext" ${page === totalPages ? 'disabled' : ''}>Next &#8594;</button>
+    ` : '';
+
+    document.getElementById('pagePrev')?.addEventListener('click', () => { page--; render(); window.scrollTo(0,0); });
+    document.getElementById('pageNext')?.addEventListener('click', () => { page++; render(); window.scrollTo(0,0); });
+  }
+
+  document.getElementById('peopleSearch').addEventListener('input', e => {
+    query = e.target.value.trim();
+    page  = 1;
+    render();
+  });
+
+  document.getElementById('pageSizeSelect').addEventListener('change', e => {
+    pageSize = Number(e.target.value);
+    page     = 1;
+    render();
+  });
+
+  render();
 }
 
 // ============================================================

@@ -538,3 +538,32 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+.show-more-btn {
+  display: block; width: 100%;
+  padding: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text2);
+  font: inherit; font-size: .88rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+  margin-top: 8px;
+}
+.show-more-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================
+   PAGINATION
+   ============================================================ */
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 16px 0;
+}
+.page-btn {
+  padding: 8px 16px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text2);
+  font: inherit; font-size: .88rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.page-btn:disabled { opacity: .35; cursor: default; }
+.page-indicator { font-size: .88rem; color: var(--text2); }
