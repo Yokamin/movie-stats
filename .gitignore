@@ -1,0 +1,26 @@
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude project context
+CLAUDE.md
+
+# Source data (contains personal watchlist — data.json has everything the app needs)
+enriched_imdb_movies_feb 2.csv
+
+# Generated test/temp files (real data.json IS committed — needed for GitHub Pages)
+data_test.json
+test_output.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Zone identifiers (Windows/WSL)
+*.Zone.Identifier
+*:Zone.Identifier
