@@ -4,7 +4,16 @@ A personal movie statistics dashboard built from an IMDB watchlist, enriched wit
 
 ## What it does
 
-Visualizes ~1674 watched films across multiple views: genres, directors, actors, writers, composers, cinematographers, countries, and timeline. Each view has drill-down detail pages that cross-link to related people and films. Hosted on GitHub Pages, mobile-first, IMDB-inspired dark theme.
+Visualizes ~1674 watched films and TV entries across multiple views: genres, directors, actors, writers, composers, cinematographers, countries, and timeline. Each view has drill-down detail pages that cross-link to related people and films. Hosted on GitHub Pages, mobile-first, IMDB-inspired dark theme.
+
+## Running locally
+
+The app loads `data.json` via `fetch()`, which requires an HTTP server (browsers block `fetch` on `file://` URLs).
+
+```bash
+python3 -m http.server 8000
+# then open http://localhost:8000
+```
 
 ---
 
