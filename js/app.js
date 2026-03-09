@@ -147,8 +147,8 @@ function handleRoute() {
 
   switch (view) {
     case 'home':             return viewHome();
-    case 'movies':           return viewMovies();
-    case 'tv':               return viewTV();
+    case 'movies':           return viewWatchlist();
+    case 'tv':               return viewWatchlist(); // legacy redirect
     case 'genres':           return viewGenres();
     case 'directors':        return viewPeople('directors', 'Directors');
     case 'actors':           return viewPeople('cast', 'Actors');
@@ -237,13 +237,49 @@ function viewHome() {
 }
 
 // ============================================================
-// VIEW: MOVIES
+// VIEW: WATCHLIST (merged Movies + TV)
 // ============================================================
-function viewMovies() {
-  setTitle('Movies');
-  setAction(`<button class="icon-btn" id="searchToggle" aria-label="Search">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  </button>`);
+
+// Common language code → name map for the language filter dropdown
+const LANG_NAMES = {
+  en:'English', fr:'French', de:'German', es:'Spanish', it:'Italian',
+  pt:'Portuguese', ja:'Japanese', ko:'Korean', zh:'Mandarin', ru:'Russian',
+  ar:'Arabic', hi:'Hindi', sv:'Swedish', da:'Danish', no:'Norwegian',
+  fi:'Finnish', nl:'Dutch', pl:'Polish', tr:'Turkish', he:'Hebrew',
+  fa:'Persian', th:'Thai', cs:'Czech', ro:'Romanian', hu:'Hungarian',
+  is:'Icelandic', uk:'Ukrainian', el:'Greek', id:'Indonesian',
+};
+
+const GRID_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`;
+const LIST_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+
+// Persists across navigations AND page refreshes via localStorage
+let _watchlistViewMode = localStorage.getItem('watchlistViewMode') || 'grid';
+
+function viewWatchlist() {
+  setTitle('Watchlist');
+
+  // Build sub-filter options from data
+  const genres   = [...DB.genres.keys()].sort();
+  const langs    = [...new Set(DB.watchable.map(e => e.original_language).filter(Boolean))].sort();
+  const decades  = [...new Set(DB.watchable.map(e => e.release_year ? Math.floor(e.release_year / 10) * 10 : null).filter(Boolean))].sort((a,b) => a-b);
+
+  let filter    = 'all';
+  let query     = '';
+  let sort      = 'rating';
+  let genre     = '';
+  let lang      = '';
+  let decade    = '';
+  let minRating = 0;
+  let viewMode  = _watchlistViewMode;
+
+  const viewLabel = () => viewMode === 'grid' ? 'List' : 'Grid';
+
+  setAction(`
+    <button class="view-toggle-btn" id="viewToggle">${viewLabel()}</button>
+    <button class="icon-btn" id="searchToggle" aria-label="Search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </button>`);
 
   const mc = document.getElementById('mainContent');
   mc.innerHTML = `
@@ -252,14 +288,35 @@ function viewMovies() {
         <div class="search-wrap" id="searchWrap" style="display:none">
           <input type="text" class="search-input" id="searchInput" placeholder="Search titles…" autocomplete="off">
         </div>
-        <div class="filter-chips" id="filterChips">
+        <div class="filter-chips" id="mainChips">
           <button class="chip active" data-filter="all">All (${DB.watchable.length})</button>
           <button class="chip" data-filter="movie">Movies (${DB.movies.length})</button>
           <button class="chip" data-filter="tv">TV (${DB.tv.length})</button>
           <button class="chip" data-filter="tv_episode">Episodes (${DB.episodes.length})</button>
           ${DB.failed.length ? `<button class="chip" data-filter="failed">Not Found (${DB.failed.length})</button>` : ''}
         </div>
-        <div class="sort-wrap">
+        <div class="subfilter-row">
+          <select class="sort-select" id="genreFilter">
+            <option value="">All genres</option>
+            ${genres.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
+          </select>
+          <select class="sort-select" id="langFilter">
+            <option value="">All languages</option>
+            ${langs.map(l => `<option value="${esc(l)}">${LANG_NAMES[l] || l.toUpperCase()}</option>`).join('')}
+          </select>
+          <select class="sort-select" id="decadeFilter">
+            <option value="">All decades</option>
+            ${decades.map(d => `<option value="${d}">${d}s</option>`).join('')}
+          </select>
+          <select class="sort-select" id="ratingFilter">
+            <option value="0">Any rating</option>
+            <option value="9">9–10</option>
+            <option value="8">8+</option>
+            <option value="7">7+</option>
+            <option value="6">6+</option>
+          </select>
+        </div>
+        <div class="sort-row">
           <select class="sort-select" id="sortSelect">
             <option value="rating">Rating (high first)</option>
             <option value="year_desc">Year (newest)</option>
@@ -267,13 +324,11 @@ function viewMovies() {
             <option value="title">Title (A–Z)</option>
             <option value="recent">Recently Added</option>
           </select>
+          <span class="result-count" id="resultCount"></span>
         </div>
       </div>
-      <div class="result-count" id="resultCount"></div>
-      <div class="poster-grid" id="moviesGrid"></div>
+      <div id="watchlistContent"></div>
     </div>`;
-
-  let filter = 'all', query = '', sort = 'rating';
 
   function getFiltered() {
     let src = filter === 'all'    ? DB.watchable
@@ -284,9 +339,12 @@ function viewMovies() {
       src = src.filter(d =>
         (d.title || '').toLowerCase().includes(q) ||
         (d.original_title || '').toLowerCase().includes(q) ||
-        (d.show_title || '').toLowerCase().includes(q)
-      );
+        (d.show_title || '').toLowerCase().includes(q));
     }
+    if (genre)     src = src.filter(d => d.genres?.includes(genre));
+    if (lang)      src = src.filter(d => d.original_language === lang);
+    if (decade)    src = src.filter(d => d.release_year >= Number(decade) && d.release_year < Number(decade) + 10);
+    if (minRating) src = src.filter(d => d.personal_rating >= minRating);
     return [...src].sort((a, b) => {
       if (sort === 'rating')    return (b.personal_rating || 0) - (a.personal_rating || 0);
       if (sort === 'year_desc') return (b.release_year || 0) - (a.release_year || 0);
@@ -297,70 +355,79 @@ function viewMovies() {
     });
   }
 
+  function listRow(e) {
+    const href = e.media_type === 'failed'     ? e.imdb_url
+               : e.media_type === 'tv'         ? `#show-${e.tmdb_id}`
+               : e.media_type === 'tv_episode' ? `#show-${e.show_tmdb_id}`
+               : `#movie-${e.tmdb_id}`;
+    const target   = e.media_type === 'failed' ? ' target="_blank" rel="noopener"' : '';
+    const title    = e.title || e.show_title || e.imdb_id || '?';
+    const showOrig = e.original_title && e.original_title !== title;
+    const mtype    = e.media_type;
+    const mediaTag = mtype === 'tv'
+      ? `<span class="media-tag media-tag--tv" style="position:static">TV</span>`
+      : mtype === 'tv_episode'
+      ? `<span class="media-tag media-tag--tv_episode" style="position:static">EP</span>` : '';
+    return `
+      <a href="${href}"${target} class="list-row">
+        <div class="list-title-line">
+          ${e.personal_rating ? `<span class="rating-badge">${e.personal_rating}</span>` : ''}
+          <span class="list-title">${esc(title)}</span>
+          ${mediaTag}
+          ${showOrig ? `<span class="list-original">(${esc(e.original_title)})</span>` : ''}
+        </div>
+        <div class="list-meta">
+          ${e.release_year || ''}${e.runtime ? ` · ${formatRuntime(e.runtime)}` : ''}${e.original_language && e.original_language !== 'en' ? ` · ${LANG_NAMES[e.original_language] || e.original_language.toUpperCase()}` : ''}
+          ${(e.genres||[]).length ? ` · ${e.genres.slice(0,2).map(g=>esc(g)).join(', ')}` : ''}
+        </div>
+      </a>`;
+  }
+
   function render() {
     const results = getFiltered();
     document.getElementById('resultCount').textContent = `${results.length} titles`;
+    const content = document.getElementById('watchlistContent');
     if (filter === 'failed') {
-      document.getElementById('moviesGrid').innerHTML = results.map(e => `
-        <a href="${e.imdb_url}" target="_blank" rel="noopener" class="movie-card">
-          <div class="card-poster"><div class="card-poster-placeholder"><span>?</span></div>
-          ${e.personal_rating ? `<div class="card-rating" style="background:#666">${e.personal_rating}</div>` : ''}</div>
-          <div class="card-info"><div class="card-title">${esc(e.imdb_id)}</div><div class="card-meta">Open on IMDB</div></div>
-        </a>`).join('');
+      content.className = '';
+      content.innerHTML = results.map(e => listRow(e)).join('');
+    } else if (viewMode === 'grid') {
+      content.className = 'poster-grid';
+      content.innerHTML = results.map(posterCard).join('');
     } else {
-      document.getElementById('moviesGrid').innerHTML = results.map(posterCard).join('');
+      content.className = '';
+      content.innerHTML = results.map(listRow).join('');
     }
   }
 
+  // Events
   document.getElementById('searchToggle').addEventListener('click', () => {
     const wrap = document.getElementById('searchWrap');
     const hidden = wrap.style.display === 'none';
     wrap.style.display = hidden ? 'block' : 'none';
     if (hidden) document.getElementById('searchInput').focus();
   });
+  document.getElementById('viewToggle').addEventListener('click', () => {
+    viewMode = _watchlistViewMode = viewMode === 'grid' ? 'list' : 'grid';
+    localStorage.setItem('watchlistViewMode', _watchlistViewMode);
+    document.getElementById('viewToggle').textContent = viewLabel();
+    render();
+  });
   document.getElementById('searchInput').addEventListener('input', e => { query = e.target.value.trim(); render(); });
-  document.getElementById('filterChips').addEventListener('click', e => {
+  document.getElementById('mainChips').addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    document.querySelectorAll('#filterChips .chip').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('#mainChips .chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     filter = chip.dataset.filter;
     render();
   });
-  document.getElementById('sortSelect').addEventListener('change', e => { sort = e.target.value; render(); });
+  document.getElementById('genreFilter').addEventListener('change',  e => { genre     = e.target.value;        render(); });
+  document.getElementById('langFilter').addEventListener('change',   e => { lang      = e.target.value;        render(); });
+  document.getElementById('decadeFilter').addEventListener('change', e => { decade    = e.target.value;        render(); });
+  document.getElementById('ratingFilter').addEventListener('change', e => { minRating = Number(e.target.value); render(); });
+  document.getElementById('sortSelect').addEventListener('change',   e => { sort      = e.target.value;        render(); });
+
   render();
-}
-
-// ============================================================
-// VIEW: TV
-// ============================================================
-function viewTV() {
-  setTitle('TV Shows & Episodes');
-  const mc = document.getElementById('mainContent');
-  mc.innerHTML = `
-    <div class="view-list">
-      <div class="filter-chips" id="tvChips">
-        <button class="chip active" data-tv="shows">Shows (${DB.tv.length})</button>
-        <button class="chip" data-tv="episodes">Episodes (${DB.episodes.length})</button>
-      </div>
-      <div class="poster-grid" id="tvGrid"></div>
-    </div>`;
-
-  function render(f) {
-    const src = f === 'shows' ? DB.tv : DB.episodes;
-    document.getElementById('tvGrid').innerHTML = [...src]
-      .sort((a, b) => (b.personal_rating || 0) - (a.personal_rating || 0))
-      .map(posterCard).join('');
-  }
-
-  document.getElementById('tvChips').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    document.querySelectorAll('#tvChips .chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    render(chip.dataset.tv);
-  });
-  render('shows');
 }
 
 // ============================================================

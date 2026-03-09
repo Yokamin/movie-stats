@@ -567,3 +567,42 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
 .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .page-btn:disabled { opacity: .35; cursor: default; }
 .page-indicator { font-size: .88rem; color: var(--text2); }
+
+/* ============================================================
+   WATCHLIST — LIST VIEW
+   ============================================================ */
+.list-row {
+  display: block;
+  padding: 10px 14px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  transition: background .15s;
+}
+.list-row:hover { background: var(--surface3); }
+.list-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.list-title { font-size: .92rem; font-weight: 600; }
+.list-original { font-size: .8rem; color: var(--text3); }
+.list-meta { font-size: .78rem; color: var(--text2); }
+
+/* ============================================================
+   WATCHLIST — SUBFILTER ROW & SORT ROW
+   ============================================================ */
+.subfilter-row {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.sort-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.topbar-action { display: flex; align-items: center; gap: 2px; }
+
+.view-toggle-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--text3);
+  border-radius: var(--radius-sm);
+  color: var(--text); background: none;
+  font: inherit; font-size: .78rem; font-weight: 600;
+  cursor: pointer; transition: border-color .15s, color .15s;
+  white-space: nowrap;
+}
+.view-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
