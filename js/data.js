@@ -7,7 +7,7 @@ window.imgUrl = (path, size = 'w185') =>
   path ? `${TMDB_IMG}/${size}${path}` : null;
 
 async function initData() {
-  const resp = await fetch('data.json');
+  const resp = await fetch('data.json', { cache: 'no-cache' });
   if (!resp.ok) throw new Error(`Failed to load data.json: ${resp.status}`);
   const raw = await resp.json();
   window.DB = buildDB(raw);
