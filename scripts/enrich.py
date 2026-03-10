@@ -502,7 +502,9 @@ def main():
         rows = rows[:args.limit]
 
     total   = len(rows)
-    is_test  = args.csv != CSV_PATH or args.limit is not None
+    # Only --limit triggers test mode (writes to data_test.json)
+    # --csv just changes the input source, not the output destination
+    is_test  = args.limit is not None
     out_path = ROOT / ("data_test.json" if is_test else "data.json")
 
     print(f"Processing {total} entries -> {out_path.name}\n")

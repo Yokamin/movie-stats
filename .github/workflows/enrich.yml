@@ -1,0 +1,44 @@
+name: Update data.json from latest CSV
+
+on:
+  # Triggered by the data repo when a new CSV is pushed
+  repository_dispatch:
+    types: [csv-updated]
+
+  # Manual trigger from the GitHub Actions UI (useful for testing)
+  workflow_dispatch:
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout movie-stats
+        uses: actions/checkout@v4
+
+      - name: Download CSV from data repo
+        run: |
+          curl -fL \
+            "https://raw.githubusercontent.com/aaged/movie-stats-data/main/ratings.csv" \
+            -o "ratings.csv"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Run enrichment script
+        run: python scripts/enrich.py --csv ratings.csv
+        env:
+          TMDB_BEARER_TOKEN: ${{ secrets.TMDB_BEARER_TOKEN }}
+
+      - name: Commit updated data.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet && echo "No changes to commit" || \
+            (git commit -m "Update data.json from latest CSV" && git push)
