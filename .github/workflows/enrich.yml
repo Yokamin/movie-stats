@@ -27,26 +27,32 @@ jobs:
       - name: Checkout movie-stats
         uses: actions/checkout@v4
 
-      - name: Find and download CSV from data repo
+      - name: Download CSV from data repo
         run: |
-          # Use GitHub API to find the CSV regardless of filename
-          RESPONSE=$(curl -s \
-            "https://api.github.com/repos/Yokamin/movie-stats-data/contents/")
+          # Use filename from dispatch payload if available, otherwise find via API
+          CSV_NAME="${{ github.event.client_payload.csv_name }}"
 
-          CSV_URL=$(echo "$RESPONSE" | python3 -c "
+          if [ -n "$CSV_NAME" ]; then
+            echo "CSV filename from payload: $CSV_NAME"
+            URL="https://raw.githubusercontent.com/Yokamin/movie-stats-data/main/$CSV_NAME"
+          else
+            echo "No filename in payload — searching via GitHub API..."
+            URL=$(curl -s \
+              "https://api.github.com/repos/Yokamin/movie-stats-data/contents/" | \
+              python3 -c "
           import sys, json
           files = json.load(sys.stdin)
           csvs = [f for f in files if isinstance(f, dict) and f.get('name','').endswith('.csv')]
           if not csvs:
               raise SystemExit('ERROR: No CSV file found in movie-stats-data repo')
           if len(csvs) > 1:
-              names = [f['name'] for f in csvs]
-              print(f'WARNING: Multiple CSVs found: {names} — using {names[0]}', flush=True)
+              print(f'WARNING: Multiple CSVs found, using first: {csvs[0][\"name\"]}', file=sys.stderr)
           print(csvs[0]['download_url'])
-          ")
+            ")
+          fi
 
-          echo "Downloading CSV: $CSV_URL"
-          curl -fL "$CSV_URL" -o "source_data.csv"
+          echo "Downloading: $URL"
+          curl -fL "$URL" -o "source_data.csv"
 
       - name: Set up Python
         uses: actions/setup-python@v5
