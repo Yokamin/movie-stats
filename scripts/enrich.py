@@ -517,7 +517,8 @@ def main():
     out_path = ROOT / ("data_test.json" if is_test else "data.json")
 
     # Load existing data.json as cache (skip TMDB API for already-fetched entries)
-    cache = {}  # keyed by str(tmdb_id)
+    cache      = {}  # keyed by str(tmdb_id)
+    imdb_cache = {}  # keyed by imdb_id — lets episodes be matched without /find API call
     if not args.force and out_path.exists():
         try:
             with open(out_path, encoding="utf-8") as f:
@@ -525,7 +526,10 @@ def main():
             for entry in existing:
                 if entry.get("tmdb_id"):
                     cache[str(entry["tmdb_id"])] = entry
-            print(f"Cache loaded: {len(cache)} existing entries (use --force to ignore)\n")
+                if entry.get("imdb_id"):
+                    imdb_cache[entry["imdb_id"]] = entry
+            print(f"Cache loaded: {len(cache)} entries by TMDB ID, "
+                  f"{len(imdb_cache)} by IMDB ID (use --force to ignore)\n")
         except Exception as e:
             print(f"Warning: could not load cache from {out_path.name}: {e}\n")
 
@@ -559,6 +563,19 @@ def main():
 
             if tmdb_id and str(tmdb_id) in cache:
                 entry, old_rating = apply_cache(cache[str(tmdb_id)])
+                rating_tag = f" (rating: {old_rating} → {personal_rating})" \
+                             if old_rating != personal_rating else ""
+                counts["cached"] += 1
+                if old_rating != personal_rating:
+                    counts["rating_updated"] += 1
+                counts[entry["media_type"]] += 1
+                results.append(entry)
+                print(f"cached [{entry['media_type']}] {entry.get('title','?')}{rating_tag}")
+                continue
+
+            # --- Step 0b: check cache by imdb_id (catches episodes with no tmdb_id in CSV) ---
+            if entry is None and imdb_id and imdb_id in imdb_cache:
+                entry, old_rating = apply_cache(imdb_cache[imdb_id])
                 rating_tag = f" (rating: {old_rating} → {personal_rating})" \
                              if old_rating != personal_rating else ""
                 counts["cached"] += 1
