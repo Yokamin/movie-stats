@@ -1,6 +1,6 @@
 # ============================================================
-# THIS FILE GOES IN THE DATA REPO (movie-stats-data), NOT HERE
-# Save it as .github/workflows/notify.yml in that repo
+# THIS FILE GOES IN THE DATA REPO (movie-stats-data), NOT HERE.
+# In that repo, save it as: .github/workflows/notify.yml
 # ============================================================
 
 name: Notify movie-stats on CSV update
@@ -8,7 +8,7 @@ name: Notify movie-stats on CSV update
 on:
   push:
     paths:
-      - '*.csv'   # only triggers when a CSV file changes
+      - '*.csv'   # triggers on any CSV file update, whatever it's named
 
 jobs:
   notify:

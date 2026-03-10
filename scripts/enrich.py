@@ -16,9 +16,16 @@ Setup:
     pip install requests python-dotenv
 
 Run from project root:
-    python scripts/enrich.py             # full run  -> data.json
-    python scripts/enrich.py --limit 10  # test run  -> data_test.json
-    python scripts/enrich.py --csv scripts/test_input.csv
+    python scripts/enrich.py                # full run  -> data.json
+    python scripts/enrich.py --limit 10     # test run  -> data_test.json
+    python scripts/enrich.py --csv FILE     # use a different CSV
+    python scripts/enrich.py --force        # ignore cache, re-fetch everything from TMDB
+
+Cache behaviour (default):
+    On subsequent runs the script loads the existing data.json and reuses
+    already-fetched TMDB data for any entry whose tmdb_id is already present.
+    Only genuinely new entries trigger API calls. personal_rating and
+    last_modified are always updated from the current CSV regardless.
 """
 
 import argparse
@@ -480,6 +487,10 @@ def main():
         metavar="N",
         help="Only process the first N rows — writes to data_test.json (useful for testing)",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Ignore existing data.json cache and re-fetch everything from TMDB",
+    )
     args = parser.parse_args()
 
     # Allow token to be passed directly, overriding .env
@@ -501,17 +512,28 @@ def main():
     if args.limit:
         rows = rows[:args.limit]
 
-    total   = len(rows)
-    # Only --limit triggers test mode (writes to data_test.json)
-    # --csv just changes the input source, not the output destination
+    total    = len(rows)
     is_test  = args.limit is not None
     out_path = ROOT / ("data_test.json" if is_test else "data.json")
+
+    # Load existing data.json as cache (skip TMDB API for already-fetched entries)
+    cache = {}  # keyed by str(tmdb_id)
+    if not args.force and out_path.exists():
+        try:
+            with open(out_path, encoding="utf-8") as f:
+                existing = json.load(f)
+            for entry in existing:
+                if entry.get("tmdb_id"):
+                    cache[str(entry["tmdb_id"])] = entry
+            print(f"Cache loaded: {len(cache)} existing entries (use --force to ignore)\n")
+        except Exception as e:
+            print(f"Warning: could not load cache from {out_path.name}: {e}\n")
 
     print(f"Processing {total} entries -> {out_path.name}\n")
 
     results = []
     failed  = []
-    counts  = {"movie": 0, "tv": 0, "tv_episode": 0, "recovered": 0}
+    counts  = {"movie": 0, "tv": 0, "tv_episode": 0, "recovered": 0, "cached": 0}
 
     with requests.Session() as session:
         for i, row in enumerate(rows, 1):
@@ -525,6 +547,17 @@ def main():
 
             entry      = None
             recovered  = False
+
+            # --- Step 0: check cache (skip API call if already fetched) ---
+            if tmdb_id and str(tmdb_id) in cache:
+                entry = {**cache[str(tmdb_id)],
+                         "personal_rating": personal_rating,
+                         "last_modified":   last_modified}
+                counts["cached"] += 1
+                counts[entry["media_type"]] += 1
+                results.append(entry)
+                print(f"cached [{entry['media_type']}] {entry.get('title','?')}")
+                continue
 
             # --- Step 1: fetch by tmdb_id (movie or tv) ---
             if tmdb_id:
@@ -608,6 +641,7 @@ def main():
     print(f"  Movies:              {counts['movie']}")
     print(f"  TV shows:            {counts['tv']}")
     print(f"  TV episodes:         {counts['tv_episode']}")
+    print(f"  Cached (no API):     {counts['cached']}")
     print(f"  Recovered via IMDB:  {counts['recovered']}")
     print(f"  Failed (with IMDB):  {len(failed_with_id)}  <- included in data.json with IMDB links")
     if failed_without_id:

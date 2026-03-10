@@ -1,12 +1,23 @@
 name: Update data.json from latest CSV
 
 on:
-  # Triggered by the data repo when a new CSV is pushed
+  # Triggered instantly by the data repo when a new CSV is pushed
   repository_dispatch:
     types: [csv-updated]
 
-  # Manual trigger from the GitHub Actions UI (useful for testing)
+  # Manual trigger from the GitHub Actions UI
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force re-fetch all entries from TMDB (ignore cache)'
+        type: boolean
+        default: false
+
+# If a new run starts while one is in progress, cancel the old one.
+# This handles the "uploaded wrong CSV, quickly uploaded correct one" case.
+concurrency:
+  group: enrich
+  cancel-in-progress: true
 
 jobs:
   enrich:
@@ -16,11 +27,26 @@ jobs:
       - name: Checkout movie-stats
         uses: actions/checkout@v4
 
-      - name: Download CSV from data repo
+      - name: Find and download CSV from data repo
         run: |
-          curl -fL \
-            "https://raw.githubusercontent.com/aaged/movie-stats-data/main/ratings.csv" \
-            -o "ratings.csv"
+          # Use GitHub API to find the CSV regardless of filename
+          RESPONSE=$(curl -s \
+            "https://api.github.com/repos/Yokamin/movie-stats-data/contents/")
+
+          CSV_URL=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          files = json.load(sys.stdin)
+          csvs = [f for f in files if isinstance(f, dict) and f.get('name','').endswith('.csv')]
+          if not csvs:
+              raise SystemExit('ERROR: No CSV file found in movie-stats-data repo')
+          if len(csvs) > 1:
+              names = [f['name'] for f in csvs]
+              print(f'WARNING: Multiple CSVs found: {names} — using {names[0]}', flush=True)
+          print(csvs[0]['download_url'])
+          ")
+
+          echo "Downloading CSV: $CSV_URL"
+          curl -fL "$CSV_URL" -o "source_data.csv"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,7 +57,12 @@ jobs:
         run: pip install requests python-dotenv
 
       - name: Run enrichment script
-        run: python scripts/enrich.py --csv ratings.csv
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python scripts/enrich.py --csv source_data.csv $FORCE_FLAG
         env:
           TMDB_BEARER_TOKEN: ${{ secrets.TMDB_BEARER_TOKEN }}
 
@@ -40,5 +71,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data.json
-          git diff --staged --quiet && echo "No changes to commit" || \
-            (git commit -m "Update data.json from latest CSV" && git push)
+          git diff --staged --quiet \
+            && echo "data.json unchanged — nothing to commit" \
+            || (git commit -m "Update data.json from latest CSV" && git push)
