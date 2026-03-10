@@ -22,6 +22,8 @@ concurrency:
 jobs:
   enrich:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to commit data.json back to the repo
 
     steps:
       - name: Checkout movie-stats
