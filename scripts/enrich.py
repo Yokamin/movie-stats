@@ -51,7 +51,7 @@ except ImportError:
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 
-BEARER_TOKEN = os.environ.get("TMDB_BEARER_TOKEN")
+BEARER_TOKEN = (os.environ.get("TMDB_BEARER_TOKEN") or "").strip()
 if not BEARER_TOKEN:
     print("ERROR: TMDB_BEARER_TOKEN not found in .env")
     sys.exit(1)
