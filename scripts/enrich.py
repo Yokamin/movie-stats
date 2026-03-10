@@ -533,7 +533,7 @@ def main():
 
     results = []
     failed  = []
-    counts  = {"movie": 0, "tv": 0, "tv_episode": 0, "recovered": 0, "cached": 0}
+    counts  = {"movie": 0, "tv": 0, "tv_episode": 0, "recovered": 0, "cached": 0, "rating_updated": 0}
 
     with requests.Session() as session:
         for i, row in enumerate(rows, 1):
@@ -548,15 +548,25 @@ def main():
             entry      = None
             recovered  = False
 
-            # --- Step 0: check cache (skip API call if already fetched) ---
+            # --- Step 0: check cache by tmdb_id ---
+            def apply_cache(cached_entry):
+                """Copy cached TMDB data, always overriding personal fields from CSV."""
+                old_rating = cached_entry.get("personal_rating")
+                new_entry  = {**cached_entry,
+                              "personal_rating": personal_rating,
+                              "last_modified":   last_modified}
+                return new_entry, old_rating
+
             if tmdb_id and str(tmdb_id) in cache:
-                entry = {**cache[str(tmdb_id)],
-                         "personal_rating": personal_rating,
-                         "last_modified":   last_modified}
+                entry, old_rating = apply_cache(cache[str(tmdb_id)])
+                rating_tag = f" (rating: {old_rating} → {personal_rating})" \
+                             if old_rating != personal_rating else ""
                 counts["cached"] += 1
+                if old_rating != personal_rating:
+                    counts["rating_updated"] += 1
                 counts[entry["media_type"]] += 1
                 results.append(entry)
-                print(f"cached [{entry['media_type']}] {entry.get('title','?')}")
+                print(f"cached [{entry['media_type']}] {entry.get('title','?')}{rating_tag}")
                 continue
 
             # --- Step 1: fetch by tmdb_id (movie or tv) ---
@@ -578,20 +588,41 @@ def main():
                     mtype = find_result["media_type"]
 
                     if mtype == "tv_episode":
-                        ep_raw, show_raw = fetch_episode_data(session, find_result)
-                        if ep_raw or show_raw:
-                            entry = parse_episode(
-                                find_result, ep_raw, show_raw,
-                                personal_rating, last_modified, imdb_id
-                            )
-
+                        # Check cache for the episode tmdb_id before fetching
+                        ep_tmdb_id = str(find_result.get("episode_tmdb_id", ""))
+                        if ep_tmdb_id and ep_tmdb_id in cache:
+                            entry, old_rating = apply_cache(cache[ep_tmdb_id])
+                            rating_tag = f" (rating: {old_rating} → {personal_rating})" \
+                                         if old_rating != personal_rating else ""
+                            counts["cached"] += 1
+                            if old_rating != personal_rating:
+                                counts["rating_updated"] += 1
+                            recovered = False  # served from cache, not really recovered
+                        else:
+                            ep_raw, show_raw = fetch_episode_data(session, find_result)
+                            if ep_raw or show_raw:
+                                entry = parse_episode(
+                                    find_result, ep_raw, show_raw,
+                                    personal_rating, last_modified, imdb_id
+                                )
                     else:
-                        raw, media_type = fetch_by_tmdb_id(session, find_result["tmdb_id"])
-                        time.sleep(REQUEST_DELAY)
-                        if raw:
-                            entry = parse_movie(raw, personal_rating, last_modified) \
-                                    if media_type == "movie" \
-                                    else parse_tv(raw, personal_rating, last_modified)
+                        # Check cache for the resolved tmdb_id before fetching
+                        resolved_id = str(find_result["tmdb_id"])
+                        if resolved_id in cache:
+                            entry, old_rating = apply_cache(cache[resolved_id])
+                            rating_tag = f" (rating: {old_rating} → {personal_rating})" \
+                                         if old_rating != personal_rating else ""
+                            counts["cached"] += 1
+                            if old_rating != personal_rating:
+                                counts["rating_updated"] += 1
+                            recovered = False  # served from cache
+                        else:
+                            raw, media_type = fetch_by_tmdb_id(session, find_result["tmdb_id"])
+                            time.sleep(REQUEST_DELAY)
+                            if raw:
+                                entry = parse_movie(raw, personal_rating, last_modified) \
+                                        if media_type == "movie" \
+                                        else parse_tv(raw, personal_rating, last_modified)
 
             # --- Step 3: log failure ---
             if entry is None:
@@ -642,6 +673,7 @@ def main():
     print(f"  TV shows:            {counts['tv']}")
     print(f"  TV episodes:         {counts['tv_episode']}")
     print(f"  Cached (no API):     {counts['cached']}")
+    print(f"  Ratings updated:     {counts['rating_updated']}")
     print(f"  Recovered via IMDB:  {counts['recovered']}")
     print(f"  Failed (with IMDB):  {len(failed_with_id)}  <- included in data.json with IMDB links")
     if failed_without_id:
