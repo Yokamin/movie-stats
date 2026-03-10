@@ -36,7 +36,8 @@ jobs:
 
           if [ -n "$CSV_NAME" ]; then
             echo "CSV filename from payload: $CSV_NAME"
-            URL="https://raw.githubusercontent.com/Yokamin/movie-stats-data/main/$CSV_NAME"
+            CSV_ENCODED=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$CSV_NAME")
+            URL="https://raw.githubusercontent.com/Yokamin/movie-stats-data/main/$CSV_ENCODED"
           else
             echo "No filename in payload — searching via GitHub API..."
             URL=$(curl -s \
