@@ -8,12 +8,12 @@ A personal movie and TV statistics dashboard built from an IMDB watchlist, enric
 
 ## What it shows
 
-~1674 watched films, TV shows, and individually logged TV episodes across:
+All films, TV shows, and individually logged TV episodes from an IMDB ratings export, across:
 
 - **Home** — key stats, ratings distribution, top genres, films by decade, recently added
 - **Watchlist** — searchable/filterable/sortable list of everything watched, grid or list view
 - **Genres, Directors, Actors, Writers, Composers, Cinematographers** — leaderboards with sorting, search, pagination, and drill-down detail pages
-- **Timeline** — films by decade and year (scrollable)
+- **Timeline** — films by decade and year
 - **Countries** — bar chart with counts and percentages, sortable list
 - **Not Found** — entries that couldn't be matched on TMDB, with IMDB links
 
@@ -36,47 +36,55 @@ python3 -m http.server 8000
 
 ```
 movie-stats/
-├── index.html              # App shell
-├── style.css               # All styles — IMDB dark theme, mobile-first
+├── index.html                  # App shell
+├── style.css                   # All styles
 ├── js/
-│   ├── data.js             # Loads data.json, builds all indexes
-│   └── app.js              # Router, navigation, all views
+│   ├── data.js                 # Loads data.json, builds all indexes
+│   └── app.js                  # Router, navigation, all views
 ├── scripts/
-│   ├── enrich.py           # Fetches data from TMDB API → outputs data.json
-│   └── test_input.csv      # Hand-crafted test cases for enrich.py
+│   ├── enrich.py               # Fetches data from TMDB API → outputs data.json
+│   └── test_input.csv          # Hand-crafted test cases for enrich.py
 ├── .github/
 │   └── workflows/
-│       └── enrich.yml      # GitHub Actions: auto-updates data.json when CSV changes
-└── data.json               # Generated dataset (committed — needed for GitHub Pages)
+│       └── enrich.yml          # Auto-updates data.json when CSV changes
+├── data-repo-setup/            # Setup files for the companion data repo (see below)
+│   ├── notify.yml              # Workflow that goes in the data repo
+│   └── README.md               # Full setup guide for the data repo
+└── data.json                   # Generated dataset (committed — needed for GitHub Pages)
 ```
 
 ---
 
-## Data pipeline
+## How data updates work
 
-1. Source data comes from an IMDB ratings export CSV
-2. `enrich.py` fetches full movie/TV data from TMDB API and outputs `data.json`
-3. `data.json` is what the web app reads — committed to the repo so GitHub Pages can serve it
+This app is designed so that the person whose data it is can update it themselves, without touching this repo or knowing anything about code.
 
-### Automated updates (GitHub Actions)
+A separate **data repo** (owned by whoever supplies the data) holds only the IMDB export CSV. When they upload a new CSV there, a workflow automatically:
 
-The CSV lives in a separate repo (`movie-stats-data`). When a new CSV is pushed there, a workflow automatically triggers `enrich.py` here, commits the new `data.json`, and Pages redeploys. New entries are fetched from TMDB; existing entries are served from cache (only ratings/dates update).
+1. Validates the file looks like an IMDB export
+2. Pings this repo
+3. This repo fetches the CSV, runs `enrich.py`, and commits a new `data.json`
+4. GitHub Pages redeploys with the updated data
 
-### Manual enrichment
+Existing entries are served from cache — only genuinely new entries hit the TMDB API, so updates are fast. A "Force re-fetch" option in the Actions tab triggers a full refresh from TMDB if ever needed.
 
-To run the script yourself:
+**Full setup instructions for the data repo** are in [`data-repo-setup/README.md`](data-repo-setup/README.md).
 
-**1. Get a TMDB API key**
+---
+
+## Running the enrichment script manually
+
+### 1. Get a TMDB API key
 
 Create a free account at [themoviedb.org](https://www.themoviedb.org/), go to **Settings → API**, and copy the **API Read Access Token** (the long JWT — not the short API key).
 
-**2. Create a `.env` file** (gitignored, never committed)
+### 2. Create a `.env` file (gitignored, never committed)
 
 ```
 TMDB_BEARER_TOKEN=your_read_access_token_here
 ```
 
-**3. Set up Python environment**
+### 3. Set up Python environment
 
 ```bash
 python3 -m venv .venv
@@ -84,7 +92,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install requests python-dotenv
 ```
 
-**4. Run**
+### 4. Run
 
 ```bash
 # Test on a small input first
@@ -100,6 +108,8 @@ python scripts/enrich.py --force
 python scripts/enrich.py --token YOUR_TOKEN
 ```
 
+Supports both the enriched CSV format and a raw IMDB export directly.
+
 ---
 
 ## Hosting on GitHub Pages
@@ -110,12 +120,11 @@ Push the repo to GitHub. In the repo settings, enable **Pages → Deploy from br
 
 ## Backlog
 
-- [ ] Manual data entry for unmatched entries ("Not Found" section) — allow adding title/info locally
-- [ ] Watch date editor — override `last_modified` per entry, stored in `localStorage`
+- [ ] Manual data entry for unmatched entries — allow adding title/info for the ~21 entries that couldn't be found on TMDB
+- [ ] Watch date editor — override the logged date per entry, stored in `localStorage`
 - [ ] IMDB person links — fetch `nm...` IDs lazily when viewing a person's detail page
 - [ ] "Surprise me" button — surface a random film from the watchlist
 - [ ] Favicon
-- [ ] Writers leaderboard: filter by job type (Screenplay vs Characters vs Story etc.) — relevant for credits like Stan Lee's "Characters" entries
-- [ ] World map SVG choropleth for Countries view
-- [ ] Additional detail page stats (frequent collaborators on person page, genre breakdown per director, etc.)
-- [ ] Posters/images — currently loaded live from TMDB CDN; consider lazy-loading improvements
+- [ ] Writers: filter leaderboard by specific job type (Screenplay vs Characters vs Story etc.)
+- [ ] World map SVG choropleth for the Countries view
+- [ ] Additional detail page stats (frequent collaborators on person page, etc.)

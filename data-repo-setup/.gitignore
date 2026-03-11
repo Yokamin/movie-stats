@@ -1,0 +1,7 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Windows/WSL zone identifiers
+*.Zone.Identifier
+*:Zone.Identifier

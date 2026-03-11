@@ -1,0 +1,107 @@
+# ============================================================
+# This file belongs in the DATA REPO (the one that holds the CSV).
+# Save it at: .github/workflows/notify.yml
+#
+# What it does:
+#   When a CSV file is pushed to this repo, it validates the file
+#   looks like an IMDB export and triggers the enrichment workflow
+#   in the main movie-stats repo to update data.json.
+#
+# Required secret in THIS repo:
+#   TRIGGER_TOKEN — a GitHub Personal Access Token (classic, repo scope)
+#                   with access to the movie-stats repo.
+#
+# See data-repo-setup/README.md in the movie-stats repo for full setup.
+# ============================================================
+
+name: Notify movie-stats on CSV update
+
+on:
+  push:
+    paths:
+      - '*.csv'   # triggers on any CSV file update, whatever it's named
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push cleanup commits back to this repo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find newest CSV
+        id: csv
+        run: |
+          COUNT=$(find . -maxdepth 1 -name "*.csv" | wc -l | tr -d ' ')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No CSV found (probably a deletion) — nothing to do."
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          NEWEST=$(git log --name-only --pretty=format: -- "*.csv" \
+                   | grep "\.csv$" | head -1)
+
+          if [ -z "$NEWEST" ] || [ ! -f "$NEWEST" ]; then
+            NEWEST=$(ls -t *.csv | head -1)
+          fi
+
+          echo "Using: $NEWEST"
+          echo "name=$NEWEST" >> $GITHUB_OUTPUT
+          echo "found=true" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Move old CSVs to _old/
+        if: steps.csv.outputs.found == 'true' && steps.csv.outputs.count > 1
+        run: |
+          NEWEST="${{ steps.csv.outputs.name }}"
+          mkdir -p _old
+
+          for f in *.csv; do
+            if [ "$f" != "$NEWEST" ]; then
+              mv "$f" "_old/$f"
+              echo "Moved to _old/: $f"
+            fi
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Auto-cleanup: moved old CSVs to _old/ [skip ci]"
+          git push
+
+      - name: Validate CSV
+        if: steps.csv.outputs.found == 'true'
+        run: |
+          CSV="${{ steps.csv.outputs.name }}"
+
+          if [ ! -s "$CSV" ]; then
+            echo "ERROR: '$CSV' is empty."
+            exit 1
+          fi
+
+          if ! grep -qE "tt[0-9]{7,}" "$CSV"; then
+            echo "ERROR: '$CSV' doesn't look like an IMDB export."
+            echo "No IMDB IDs (tt1234567 format) found."
+            echo "First 3 lines:"
+            head -3 "$CSV"
+            exit 1
+          fi
+
+          ROWS=$(grep -cE "tt[0-9]{7,}" "$CSV" || true)
+          echo "Validation passed: ~$ROWS entries in $CSV"
+
+      - name: Trigger enrichment in movie-stats
+        if: steps.csv.outputs.found == 'true'
+        run: |
+          curl -X POST \
+            --fail-with-body \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/Yokamin/movie-stats/dispatches \
+            -d "{\"event_type\":\"csv-updated\",\"client_payload\":{\"csv_name\":\"${{ steps.csv.outputs.name }}\"}}"

@@ -14,6 +14,9 @@ CLAUDE.md
 # /*.csv only matches root level, so scripts/test_input.csv is still tracked
 /*.csv
 
+# Local copy of data repo (has its own .git — must never be committed here)
+movie-stats-data/
+
 # Generated test/temp files
 data_test.json
 test_output.json
