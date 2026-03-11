@@ -813,3 +813,9 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
 }
 
 .hbar-pct { color: var(--text3); font-size: .72rem; }
+
+.hbar-pct-line {
+  display: block;
+  font-size: .72rem; color: var(--text3);
+  margin-top: 2px;
+}

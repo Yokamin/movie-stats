@@ -972,7 +972,7 @@ function viewCountries() {
           <span class="people-name">${esc(c.name)}</span>
           <div class="people-stats-col">
             <div class="people-stats-left">
-              <span class="people-count">${c.count} <span class="hbar-pct">${(c.count / total * 100).toFixed(1)}%</span></span>
+              <span class="people-count">${c.count} titles &nbsp;·&nbsp; <span class="hbar-pct">${(c.count / total * 100).toFixed(1)}%</span></span>
             </div>
             <div class="people-stats-right">
               ${c.avg ? `<span class="dual-rating dual-rating--you"><span class="rating-lbl">you</span><span class="rating-num">${c.avg}</span></span>` : ''}
@@ -998,8 +998,8 @@ function viewCountries() {
             <div class="hbar-track">
               <div class="hbar-fill" style="width:${(c.count / maxCount * 100).toFixed(1)}%"></div>
             </div>
-            <span class="hbar-count">${c.count} <span class="hbar-pct">${pct}%</span></span>
           </div>
+          <span class="hbar-pct-line">${c.count} titles &nbsp;·&nbsp; ${pct}%</span>
         </a>`;
     }).join('');
   }
@@ -1008,7 +1008,7 @@ function viewCountries() {
     <div class="view-home">
       <div class="section">
         <button class="charts-toggle" id="countryChartToggle">
-          <span>Overview</span> <span id="countryChartArrow">▾</span>
+          <span>Chart</span> <span id="countryChartArrow">▾</span>
         </button>
         <div id="countryChartSection" class="hbar-chart" style="display:none">
           <div id="countryBarChart"></div>
@@ -1055,11 +1055,11 @@ function viewFailed() {
       <div class="people-list">
         ${DB.failed.map(f => `
           <a href="${f.imdb_url}" target="_blank" rel="noopener" class="people-row">
-            <div class="people-rank-col"><span class="people-name">${esc(f.imdb_id)}</span></div>
-            <div class="people-stats-col">
-              ${f.personal_rating ? `<span class="rating-badge">${f.personal_rating}</span>` : ''}
+            <div class="people-rank-col">
               <span class="tag tag--external">Open IMDB</span>
+              <span class="people-name">${esc(f.imdb_id)}</span>
             </div>
+            ${f.personal_rating ? `<span class="rating-badge">${f.personal_rating}</span>` : ''}
           </a>`).join('')}
       </div>
     </div>`;
