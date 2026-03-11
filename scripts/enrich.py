@@ -524,6 +524,8 @@ def main():
             with open(out_path, encoding="utf-8") as f:
                 existing = json.load(f)
             for entry in existing:
+                if entry.get("media_type") == "failed":
+                    continue  # always retry failed entries — TMDB may have added them
                 if entry.get("tmdb_id"):
                     cache[str(entry["tmdb_id"])] = entry
                 if entry.get("imdb_id"):
