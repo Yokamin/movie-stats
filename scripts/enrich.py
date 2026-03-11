@@ -107,7 +107,7 @@ def load_csv(path: Path) -> list[dict]:
     Everything else is optional and fetched from TMDB.
     """
     rows = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:  # utf-8-sig strips BOM if present
         for row in csv.DictReader(f):
             # TMDB ID (enriched format only — raw IMDB exports don't have this)
             tmdb_raw = _get(row, "tmdb_id")
