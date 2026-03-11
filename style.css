@@ -174,7 +174,8 @@ ul { list-style: none; }
   gap: 12px;
   margin-bottom: 32px;
 }
-@media (min-width: 640px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 640px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 960px) { .stat-grid { grid-template-columns: repeat(6, 1fr); } }
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -323,8 +324,11 @@ ul { list-style: none; }
 .people-row:first-child { border-top: 1px solid var(--border); }
 .people-row:hover { background: var(--surface); }
 
+.people-rank { font-size: .8rem; color: var(--text3); min-width: 22px; flex-shrink: 0; text-align: right; }
+/* Used for rows without an avatar (genres, countries, timeline, episodes, failed) */
 .people-rank-col { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.people-rank { font-size: .8rem; color: var(--text3); min-width: 24px; flex-shrink: 0; }
+/* Used for rows with an avatar (people leaderboards) — name + stats stacked */
+.people-row-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .people-avatar {
   width: 36px; height: 36px;
   border-radius: 50%; object-fit: cover;
@@ -340,9 +344,11 @@ ul { list-style: none; }
 }
 .people-name {
   font-size: .92rem; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.3;
 }
-.people-stats-col { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.people-stats-col { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.people-stats-left  { display: flex; align-items: center; gap: 8px; }
+.people-stats-right { display: flex; align-items: center; gap: 5px; }
 .people-count { font-size: .8rem; color: var(--text2); white-space: nowrap; }
 .people-time  { font-size: .78rem; color: var(--text3); white-space: nowrap; }
 
@@ -606,3 +612,204 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
   white-space: nowrap;
 }
 .view-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================
+   STAT CARD SUBLABEL
+   ============================================================ */
+.stat-sublabel {
+  font-size: .72rem;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+/* Chart.js handles cursor changes on hover automatically */
+
+/* ============================================================
+   WATCHLIST — SEARCH/VIEW ROW & FILTER DROPDOWN
+   ============================================================ */
+.search-view-row {
+  display: flex; gap: 8px; align-items: center;
+}
+.search-view-row .search-input { flex: 1; }
+
+.filter-drop-wrap { position: relative; }
+.filter-drop-btn {
+  cursor: pointer; white-space: nowrap;
+  background: var(--surface); color: var(--text);
+}
+.filter-drop-menu {
+  display: none;
+  position: absolute; top: calc(100% + 4px); left: 0;
+  min-width: 160px; z-index: 50;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.filter-drop-menu.open { display: block; }
+.subfilter-panel.open  { display: flex; } /* override: panel uses flex column */
+.filter-option {
+  display: block; width: 100%;
+  padding: 10px 14px; text-align: left;
+  background: none; border: none;
+  color: var(--text2); font: inherit; font-size: .88rem;
+  cursor: pointer; transition: background .15s;
+}
+.filter-option:hover  { background: var(--surface3); color: var(--text); }
+.filter-option.active { color: var(--accent); font-weight: 700; }
+
+/* ============================================================
+   DUAL RATING (you / tmdb) — inline two-tone pill
+   ============================================================ */
+.dual-rating {
+  display: inline-flex; align-items: center;
+  border-radius: 3px; overflow: hidden;
+  font-size: .75rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.rating-lbl {
+  padding: 3px 4px;
+  font-size: .58rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .03em;
+  line-height: 1; align-self: stretch;
+  display: flex; align-items: center;
+}
+.rating-num {
+  padding: 3px 5px;
+  line-height: 1;
+  display: flex; align-items: center;
+}
+.dual-rating--you { background: var(--accent); color: #000; }
+.dual-rating--you .rating-lbl { background: rgba(0,0,0,.18); }
+.dual-rating--tmdb { background: var(--surface3); color: var(--text2); }
+.dual-rating--tmdb .rating-lbl { background: var(--surface2); color: var(--text3); }
+
+.sort-dir-btn {
+  padding: 7px 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text2);
+  font: inherit; font-size: .9rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+  flex-shrink: 0; line-height: 1;
+}
+.sort-dir-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================
+   WATCHLIST CONTROLS ROW
+   ============================================================ */
+.wl-controls-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.wl-btn {
+  padding: 7px 11px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font: inherit; font-size: .85rem; cursor: pointer;
+  transition: border-color .15s; white-space: nowrap;
+}
+.wl-btn:hover { border-color: var(--text2); }
+.wl-btn--active { border-color: var(--accent); color: var(--accent); }
+
+/* Sub-filters panel */
+.subfilter-panel {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin-top: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* No absolute positioning — sits as a full-width block in the flow */
+}
+.subfilter-panel.open { display: flex; }
+.subfilter-row-item {
+  display: flex; align-items: center; gap: 10px;
+}
+.subfilter-lbl {
+  font-size: .8rem; color: var(--text2);
+  min-width: 72px; flex-shrink: 0;
+}
+.subfilter-row-item .sort-select { flex: 1; }
+.subfilter-clear {
+  display: block; width: 100%;
+  padding: 7px; margin-top: 2px;
+  background: none; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text3);
+  font: inherit; font-size: .82rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.subfilter-clear:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Sort menu and subfilter panel: right-align so they don't overflow on narrow screens */
+#sortMenu { left: auto; right: 0; }
+
+/* ============================================================
+   SCROLLABLE CHART (e.g. By Year on mobile)
+   ============================================================ */
+.chart-scroll-outer {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.chart-scroll-inner {
+  height: 260px;
+  padding: 16px;
+}
+
+.charts-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text2);
+  font: inherit; font-size: .88rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.charts-toggle:hover { border-color: var(--text2); color: var(--text); }
+
+/* ============================================================
+   HTML BAR CHART (Countries)
+   ============================================================ */
+.hbar-chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.hbar-item {
+  display: block; text-decoration: none;
+  padding: 4px 0;
+  transition: opacity .15s;
+}
+.hbar-item:hover { opacity: .8; }
+.hbar-name {
+  display: block;
+  font-size: .82rem; color: var(--text2);
+  margin-bottom: 4px; line-height: 1.3;
+}
+.hbar-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.hbar-track {
+  flex: 1; height: 8px;
+  background: var(--surface3);
+  border-radius: 4px; overflow: hidden;
+}
+.hbar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width .4s ease;
+}
+.hbar-count {
+  font-size: .75rem; color: var(--text3);
+  min-width: 28px; text-align: right;
+  white-space: nowrap;
+}
+
+.hbar-pct { color: var(--text3); font-size: .72rem; }

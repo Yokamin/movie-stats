@@ -68,18 +68,18 @@ function buildLeaderboards(people) {
   const crewRoles = ['directors', 'writers', 'composers', 'cinematographers', 'editors'];
   const result = {};
 
-  // Minimum appearances to appear in leaderboard.
-  // Cast lists are huge (15k+ unique actors); filtering to 2+ keeps only
-  // people who appeared in more than one film — far more meaningful.
-  const minAppearances = { cast: 2 };
+  // No minimum — pagination handles the display performance now.
+  // Everyone who appears in at least 1 film shows up.
+  const minAppearances = {};
 
   for (const role of [...crewRoles, 'cast']) {
     const min = minAppearances[role] || 1;
     result[role] = [...people.values()]
       .filter(p => p.roles[role].length >= min)
       .map(p => {
-        const entries = p.roles[role].map(a => a.entry);
-        const rated   = entries.filter(e => e.personal_rating > 0);
+        const entries    = p.roles[role].map(a => a.entry);
+        const rated      = entries.filter(e => e.personal_rating > 0);
+        const tmdbRated  = entries.filter(e => e.vote_average > 0);
         return {
           tmdb_person_id: p.tmdb_person_id,
           name:           p.name,
@@ -87,6 +87,9 @@ function buildLeaderboards(people) {
           count:          entries.length,
           avg:            rated.length
             ? (rated.reduce((s, e) => s + e.personal_rating, 0) / rated.length).toFixed(1)
+            : null,
+          tmdbAvg:        tmdbRated.length
+            ? (tmdbRated.reduce((s, e) => s + e.vote_average, 0) / tmdbRated.length).toFixed(1)
             : null,
           runtime:        entries.reduce((s, e) => s + (e.runtime || 0), 0),
         };
@@ -148,13 +151,24 @@ function computeStats(watchable, movies, tv, episodes, failed) {
     .sort((a, b) => a[0] - b[0])
     .map(([decade, count]) => ({ decade, count }));
 
+  const tmdbRated = watchable.filter(d => d.vote_average > 0);
+  const tmdbAvgRating = tmdbRated.length
+    ? (tmdbRated.reduce((s, d) => s + d.vote_average, 0) / tmdbRated.length).toFixed(1)
+    : '—';
+
+  const withRuntime = watchable.filter(d => d.runtime > 0);
+  const avgRuntimeMinutes = withRuntime.length
+    ? Math.round(withRuntime.reduce((s, d) => s + d.runtime, 0) / withRuntime.length)
+    : 0;
+
   return {
     totalMovies: movies.length, totalTV: tv.length,
     totalEpisodes: episodes.length, totalFailed: failed.length,
     totalWatchable: watchable.length,
-    avgRating, totalMinutes,
+    avgRating, tmdbAvgRating, totalMinutes,
     totalHours: Math.floor(totalMinutes / 60),
     totalDays: (totalMinutes / 60 / 24).toFixed(1),
+    avgRuntimeMinutes,
     ratingDist, topGenres, byDecade,
   };
 }

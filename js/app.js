@@ -19,16 +19,58 @@ Chart.defaults.borderColor = '#2e2e2e';
 Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 Chart.defaults.font.size = 12;
 
-function chartOpts({ xTitle, yTitle } = {}) {
+function chartOpts({ xTitle, yTitle, xStepSize, xAutoSkip = true, xMaxTicks, onClick } = {}) {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
     plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y ?? ctx.parsed.x}` } } },
+    onClick: onClick || null,
     scales: {
-      x: { grid: { color: '#2a2a2a' }, ticks: { color: '#a8a8a8' }, ...(xTitle ? { title: { display: true, text: xTitle, color: '#666' } } : {}) },
-      y: { grid: { color: '#2a2a2a' }, ticks: { color: '#a8a8a8' }, ...(yTitle ? { title: { display: true, text: yTitle, color: '#666' } } : {}) },
+      x: {
+        grid: { color: '#2a2a2a' },
+        ticks: {
+          color: '#a8a8a8',
+          autoSkip: xAutoSkip,
+          maxRotation: xAutoSkip ? 45 : 0,
+          ...(xStepSize  ? { stepSize: xStepSize }       : {}),
+          ...(xMaxTicks  ? { maxTicksLimit: xMaxTicks }  : {}),
+        },
+        ...(xTitle ? { title: { display: true, text: xTitle, color: '#a8a8a8' } } : {}),
+      },
+      y: {
+        grid: { color: '#2a2a2a' },
+        ticks: { color: '#a8a8a8' },
+        ...(yTitle ? { title: { display: true, text: yTitle, color: '#a8a8a8' } } : {}),
+      },
     },
   };
+}
+
+// Renders a sort-direction toggle button and wires it up.
+// Returns a getter for the current direction multiplier (1 = default, -1 = reversed).
+function sortDirBtn(containerId, onToggle) {
+  let dir = 1;
+  const btn = document.getElementById(containerId);
+  if (!btn) return () => dir;
+  btn.title = 'Reverse order';
+  btn.addEventListener('click', () => {
+    dir *= -1;
+    btn.textContent = dir === 1 ? '↓' : '↑';
+    onToggle();
+  });
+  return () => dir;
+}
+
+// Returns the bar index for a chart click, even when clicking
+// in empty space above a small bar (intersect: false fallback)
+function barClickIndex(evt, elements, chart) {
+  if (elements.length) return elements[0].index;
+  const isHorizontal = chart.options.indexAxis === 'y';
+  const pts = chart.getElementsAtEventForMode(
+    evt.native || evt, 'index', { intersect: false, axis: isHorizontal ? 'y' : 'x' }, false
+  );
+  return pts.length ? pts[0].index : null;
 }
 
 // ============================================================
@@ -149,6 +191,7 @@ function handleRoute() {
     case 'home':             return viewHome();
     case 'movies':           return viewWatchlist();
     case 'tv':               return viewWatchlist(); // legacy redirect
+    case 'rated':            return viewRated(param);
     case 'genres':           return viewGenres();
     case 'directors':        return viewPeople('directors', 'Directors');
     case 'actors':           return viewPeople('cast', 'Actors');
@@ -181,8 +224,14 @@ function viewHome() {
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-value">${stats.totalMovies.toLocaleString()}</div><div class="stat-label">Movies</div></div>
         <div class="stat-card"><div class="stat-value">${(stats.totalTV + stats.totalEpisodes).toLocaleString()}</div><div class="stat-label">TV &amp; Episodes</div></div>
-        <div class="stat-card"><div class="stat-value accent">${stats.avgRating}</div><div class="stat-label">Avg Rating</div></div>
+        <div class="stat-card">
+          <div class="stat-value accent">${stats.avgRating}</div>
+          <div class="stat-label">Your Avg Rating</div>
+          <div class="stat-sublabel">TMDB avg: ${stats.tmdbAvgRating}</div>
+        </div>
         <div class="stat-card"><div class="stat-value">${stats.totalDays}</div><div class="stat-label">Days Watched</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.totalHours.toLocaleString()}</div><div class="stat-label">Hours Watched</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.avgRuntimeMinutes}</div><div class="stat-label">Avg Film Length (min)</div></div>
       </div>
       <div class="section">
         <h2 class="section-title">Ratings Distribution</h2>
@@ -208,7 +257,18 @@ function viewHome() {
       labels: stats.ratingDist.map(d => d.rating),
       datasets: [{ data: stats.ratingDist.map(d => d.count), backgroundColor: '#f5c518', borderRadius: 4 }],
     },
-    options: chartOpts({ xTitle: 'Rating', yTitle: 'Films' }),
+    options: {
+      ...chartOpts({ xTitle: 'Rating', yTitle: 'Films', xStepSize: 1, xAutoSkip: false }),
+      onClick: (evt, elements, chart) => {
+        const i = barClickIndex(evt, elements, chart);
+        if (i === null) return;
+        navigate(`rated-${stats.ratingDist[i].rating}`);
+      },
+      plugins: {
+        ...chartOpts().plugins,
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} films` } },
+      },
+    },
   });
 
   mkChart('chartGenres', {
@@ -217,7 +277,15 @@ function viewHome() {
       labels: stats.topGenres.map(d => d.name),
       datasets: [{ data: stats.topGenres.map(d => d.count), backgroundColor: '#f5c518', borderRadius: 4 }],
     },
-    options: { ...chartOpts({ yTitle: 'Films' }), indexAxis: 'y' },
+    options: {
+      ...chartOpts({ yTitle: 'Films' }),
+      indexAxis: 'y',
+      onClick: (evt, elements, chart) => {
+        const i = barClickIndex(evt, elements, chart);
+        if (i === null) return;
+        navigate(`genre-${encodeURIComponent(stats.topGenres[i].name)}`);
+      },
+    },
   });
 
   mkChart('chartDecades', {
@@ -226,7 +294,14 @@ function viewHome() {
       labels: stats.byDecade.map(d => `${d.decade}s`),
       datasets: [{ data: stats.byDecade.map(d => d.count), backgroundColor: '#f5c518', borderRadius: 4 }],
     },
-    options: chartOpts({ xTitle: 'Decade', yTitle: 'Films' }),
+    options: {
+      ...chartOpts({ xTitle: 'Decade', yTitle: 'Films' }),
+      onClick: (evt, elements, chart) => {
+        const i = barClickIndex(evt, elements, chart);
+        if (i === null) return;
+        navigate(`decade-${stats.byDecade[i].decade}`);
+      },
+    },
   });
 
   const recent = [...DB.watchable]
@@ -274,58 +349,106 @@ function viewWatchlist() {
   let viewMode  = _watchlistViewMode;
 
   const viewLabel = () => viewMode === 'grid' ? 'List' : 'Grid';
+  const filterLabels = { all: 'All', movie: 'Movies', tv: 'TV', tv_episode: 'Episodes', failed: 'Not Found' };
 
-  setAction(`
-    <button class="view-toggle-btn" id="viewToggle">${viewLabel()}</button>
-    <button class="icon-btn" id="searchToggle" aria-label="Search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    </button>`);
+  setAction('');
+
+  const sortLabels = { rating:'Rating', year_desc:'Year ↓', year_asc:'Year ↑', title:'Title A–Z', recent:'Recent' };
+
+  function activeFilterCount() {
+    return [genre, lang, decade].filter(Boolean).length + (minRating > 0 ? 1 : 0);
+  }
+
+  function updateFilterBtn() {
+    const n   = activeFilterCount();
+    const btn = document.getElementById('subfilterBtn');
+    if (!btn) return;
+    btn.textContent = n > 0 ? `Filters (${n}) ▾` : 'Filters ▾';
+    btn.classList.toggle('wl-btn--active', n > 0);
+  }
+
+  function updateSortBtn() {
+    const btn = document.getElementById('sortBtn');
+    if (btn) btn.textContent = `${sortLabels[sort]} ▾`;
+  }
 
   const mc = document.getElementById('mainContent');
   mc.innerHTML = `
     <div class="view-list">
       <div class="list-controls">
-        <div class="search-wrap" id="searchWrap" style="display:none">
+
+        <div class="search-view-row">
           <input type="text" class="search-input" id="searchInput" placeholder="Search titles…" autocomplete="off">
+          <button class="view-toggle-btn" id="viewToggle">${viewLabel()}</button>
         </div>
-        <div class="filter-chips" id="mainChips">
-          <button class="chip active" data-filter="all">All (${DB.watchable.length})</button>
-          <button class="chip" data-filter="movie">Movies (${DB.movies.length})</button>
-          <button class="chip" data-filter="tv">TV (${DB.tv.length})</button>
-          <button class="chip" data-filter="tv_episode">Episodes (${DB.episodes.length})</button>
-          ${DB.failed.length ? `<button class="chip" data-filter="failed">Not Found (${DB.failed.length})</button>` : ''}
-        </div>
-        <div class="subfilter-row">
-          <select class="sort-select" id="genreFilter">
-            <option value="">All genres</option>
-            ${genres.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
-          </select>
-          <select class="sort-select" id="langFilter">
-            <option value="">All languages</option>
-            ${langs.map(l => `<option value="${esc(l)}">${LANG_NAMES[l] || l.toUpperCase()}</option>`).join('')}
-          </select>
-          <select class="sort-select" id="decadeFilter">
-            <option value="">All decades</option>
-            ${decades.map(d => `<option value="${d}">${d}s</option>`).join('')}
-          </select>
-          <select class="sort-select" id="ratingFilter">
-            <option value="0">Any rating</option>
-            <option value="9">9–10</option>
-            <option value="8">8+</option>
-            <option value="7">7+</option>
-            <option value="6">6+</option>
-          </select>
-        </div>
-        <div class="sort-row">
-          <select class="sort-select" id="sortSelect">
-            <option value="rating">Rating (high first)</option>
-            <option value="year_desc">Year (newest)</option>
-            <option value="year_asc">Year (oldest)</option>
-            <option value="title">Title (A–Z)</option>
-            <option value="recent">Recently Added</option>
-          </select>
+
+        <div class="wl-controls-row">
+          <!-- Type filter -->
+          <div class="filter-drop-wrap" id="filterDropWrap">
+            <button class="wl-btn" id="filterDropBtn">${filterLabels[filter]} ▾</button>
+            <div class="filter-drop-menu" id="filterDropMenu">
+              <button class="filter-option active" data-filter="all">All (${DB.watchable.length})</button>
+              <button class="filter-option" data-filter="movie">Movies (${DB.movies.length})</button>
+              <button class="filter-option" data-filter="tv">TV (${DB.tv.length})</button>
+              <button class="filter-option" data-filter="tv_episode">Episodes (${DB.episodes.length})</button>
+              ${DB.failed.length ? `<button class="filter-option" data-filter="failed">Not Found (${DB.failed.length})</button>` : ''}
+            </div>
+          </div>
+
+          <!-- Sub-filters button only — panel is below the row to avoid overflow -->
+          <button class="wl-btn" id="subfilterBtn">Filters ▾</button>
+
+          <!-- Sort -->
+          <div class="filter-drop-wrap" id="sortWrap">
+            <button class="wl-btn" id="sortBtn">${sortLabels[sort]} ▾</button>
+            <div class="filter-drop-menu" id="sortMenu">
+              <button class="filter-option active" data-sort="rating">Rating</button>
+              <button class="filter-option" data-sort="year_desc">Year (newest first)</button>
+              <button class="filter-option" data-sort="year_asc">Year (oldest first)</button>
+              <button class="filter-option" data-sort="title">Title A–Z</button>
+              <button class="filter-option" data-sort="recent">Recently Added</button>
+            </div>
+          </div>
+
           <span class="result-count" id="resultCount"></span>
         </div>
+
+        <!-- Sub-filters panel: full-width block, no absolute positioning -->
+        <div class="subfilter-panel" id="subfilterPanel">
+          <div class="subfilter-row-item">
+            <label class="subfilter-lbl">Genre</label>
+            <select class="sort-select" id="genreFilter">
+              <option value="">All</option>
+              ${genres.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="subfilter-row-item">
+            <label class="subfilter-lbl">Language</label>
+            <select class="sort-select" id="langFilter">
+              <option value="">All</option>
+              ${langs.map(l => `<option value="${esc(l)}">${LANG_NAMES[l] || l.toUpperCase()}</option>`).join('')}
+            </select>
+          </div>
+          <div class="subfilter-row-item">
+            <label class="subfilter-lbl">Decade</label>
+            <select class="sort-select" id="decadeFilter">
+              <option value="">All</option>
+              ${decades.map(d => `<option value="${d}">${d}s</option>`).join('')}
+            </select>
+          </div>
+          <div class="subfilter-row-item">
+            <label class="subfilter-lbl">Min rating</label>
+            <select class="sort-select" id="ratingFilter">
+              <option value="0">Any</option>
+              <option value="9">9–10</option>
+              <option value="8">8+</option>
+              <option value="7">7+</option>
+              <option value="6">6+</option>
+            </select>
+          </div>
+          <button class="subfilter-clear" id="clearFilters">Clear all</button>
+        </div>
+
       </div>
       <div id="watchlistContent"></div>
     </div>`;
@@ -399,33 +522,84 @@ function viewWatchlist() {
     }
   }
 
-  // Events
-  document.getElementById('searchToggle').addEventListener('click', () => {
-    const wrap = document.getElementById('searchWrap');
-    const hidden = wrap.style.display === 'none';
-    wrap.style.display = hidden ? 'block' : 'none';
-    if (hidden) document.getElementById('searchInput').focus();
+  // Helper: close all dropdowns except the given one
+  function closeAllDrops(except) {
+    ['filterDropMenu','sortMenu'].forEach(id => {
+      if (id !== except) document.getElementById(id)?.classList.remove('open');
+    });
+  }
+
+  // Close all on outside click
+  document.addEventListener('click', () => closeAllDrops(null));
+
+  // Stop clicks inside drop-wraps and the subfilter panel from bubbling to document
+  ['filterDropWrap','sortWrap','subfilterPanel'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', e => e.stopPropagation());
   });
+  document.getElementById('subfilterBtn')?.addEventListener('click', e => e.stopPropagation());
+
+  // Search
+  document.getElementById('searchInput').addEventListener('input', e => { query = e.target.value.trim(); render(); });
+
+  // View toggle
   document.getElementById('viewToggle').addEventListener('click', () => {
     viewMode = _watchlistViewMode = viewMode === 'grid' ? 'list' : 'grid';
     localStorage.setItem('watchlistViewMode', _watchlistViewMode);
     document.getElementById('viewToggle').textContent = viewLabel();
     render();
   });
-  document.getElementById('searchInput').addEventListener('input', e => { query = e.target.value.trim(); render(); });
-  document.getElementById('mainChips').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    document.querySelectorAll('#mainChips .chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    filter = chip.dataset.filter;
+
+  // Type filter dropdown
+  document.getElementById('filterDropBtn').addEventListener('click', () => {
+    const m = document.getElementById('filterDropMenu');
+    closeAllDrops('filterDropMenu');
+    m.classList.toggle('open');
+  });
+  document.getElementById('filterDropMenu').addEventListener('click', e => {
+    const opt = e.target.closest('.filter-option');
+    if (!opt) return;
+    filter = opt.dataset.filter;
+    document.querySelectorAll('#filterDropMenu .filter-option').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    document.getElementById('filterDropBtn').textContent = `${filterLabels[filter]} ▾`;
+    document.getElementById('filterDropMenu').classList.remove('open');
     render();
   });
-  document.getElementById('genreFilter').addEventListener('change',  e => { genre     = e.target.value;        render(); });
-  document.getElementById('langFilter').addEventListener('change',   e => { lang      = e.target.value;        render(); });
-  document.getElementById('decadeFilter').addEventListener('change', e => { decade    = e.target.value;        render(); });
-  document.getElementById('ratingFilter').addEventListener('change', e => { minRating = Number(e.target.value); render(); });
-  document.getElementById('sortSelect').addEventListener('change',   e => { sort      = e.target.value;        render(); });
+
+  // Sub-filters panel (inline block, not a dropdown)
+  document.getElementById('subfilterBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    closeAllDrops(null); // close type/sort dropdowns
+    document.getElementById('subfilterPanel').classList.toggle('open');
+  });
+  document.getElementById('genreFilter').addEventListener('change',  e => { genre     = e.target.value;         updateFilterBtn(); render(); });
+  document.getElementById('langFilter').addEventListener('change',   e => { lang      = e.target.value;         updateFilterBtn(); render(); });
+  document.getElementById('decadeFilter').addEventListener('change', e => { decade    = e.target.value;         updateFilterBtn(); render(); });
+  document.getElementById('ratingFilter').addEventListener('change', e => { minRating = Number(e.target.value); updateFilterBtn(); render(); });
+  document.getElementById('clearFilters').addEventListener('click',  () => {
+    genre = lang = decade = ''; minRating = 0;
+    ['genreFilter','langFilter','decadeFilter'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('ratingFilter').value = '0';
+    updateFilterBtn();
+    render();
+  });
+
+  // Sort dropdown
+  document.getElementById('sortBtn').addEventListener('click', () => {
+    const m = document.getElementById('sortMenu');
+    closeAllDrops('sortMenu');
+    m.classList.toggle('open');
+  });
+  document.getElementById('sortMenu').addEventListener('click', e => {
+    const opt = e.target.closest('.filter-option');
+    if (!opt) return;
+    sort = opt.dataset.sort;
+    document.querySelectorAll('#sortMenu .filter-option').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    document.getElementById('sortMenu').classList.remove('open');
+    updateSortBtn();
+    render();
+  });
 
   render();
 }
@@ -435,26 +609,73 @@ function viewWatchlist() {
 // ============================================================
 function viewGenres() {
   setTitle('Genres');
-  const genres = [...DB.genres.entries()]
-    .map(([name, entries]) => ({ name, count: entries.length, avg: avgRating(entries) }))
-    .sort((a, b) => b.count - a.count);
+  let sortBy = 'count';
+  let dir    = 1;
+
+  const allGenres = [...DB.genres.entries()].map(([name, entries]) => {
+    const tmdbRated = entries.filter(e => e.vote_average > 0);
+    return {
+      name,
+      count:   entries.length,
+      avg:     avgRating(entries),
+      tmdbAvg: tmdbRated.length
+        ? (tmdbRated.reduce((s, e) => s + e.vote_average, 0) / tmdbRated.length).toFixed(1)
+        : null,
+    };
+  });
+
+  function getSorted() {
+    const rows = [...allGenres].sort((a, b) => {
+      if (sortBy === 'count')       return (b.count - a.count) * dir;
+      if (sortBy === 'my_rating')   return ((Number(b.avg)||0) - (Number(a.avg)||0)) * dir;
+      if (sortBy === 'tmdb_rating') return ((Number(b.tmdbAvg)||0) - (Number(a.tmdbAvg)||0)) * dir;
+      if (sortBy === 'name')        return a.name.localeCompare(b.name) * dir;
+      return 0;
+    });
+    return rows;
+  }
+
+  function renderList() {
+    const genres = getSorted();
+    document.getElementById('genreList').innerHTML = genres.map((g, i) => `
+      <a href="#genre-${encodeURIComponent(g.name)}" class="people-row">
+        <span class="people-rank">${i + 1}</span>
+        <div class="people-row-content">
+          <span class="people-name">${esc(g.name)}</span>
+          <div class="people-stats-col">
+            <div class="people-stats-left">
+              <span class="people-count">${g.count} titles</span>
+            </div>
+            <div class="people-stats-right">
+              ${g.avg ? `<span class="dual-rating dual-rating--you"><span class="rating-lbl">you</span><span class="rating-num">${g.avg}</span></span>` : ''}
+              ${g.tmdbAvg ? `<span class="dual-rating dual-rating--tmdb"><span class="rating-lbl">tmdb</span><span class="rating-num">${g.tmdbAvg}</span></span>` : ''}
+            </div>
+          </div>
+        </div>
+      </a>`).join('');
+    const btn = document.getElementById('genreDirBtn');
+    if (btn) btn.textContent = dir === 1 ? '↓' : '↑';
+  }
 
   document.getElementById('mainContent').innerHTML = `
     <div class="view-list">
-      <div class="people-list">
-        ${genres.map((g, i) => `
-          <a href="#genre-${encodeURIComponent(g.name)}" class="people-row">
-            <div class="people-rank-col">
-              <span class="people-rank">${i + 1}</span>
-              <span class="people-name">${esc(g.name)}</span>
-            </div>
-            <div class="people-stats-col">
-              ${g.avg ? `<span class="rating-badge">${g.avg}</span>` : ''}
-              <span class="people-count">${g.count} titles</span>
-            </div>
-          </a>`).join('')}
+      <div class="list-controls">
+        <div class="subfilter-row">
+          <select class="sort-select" id="genreSortSelect">
+            <option value="count">Titles</option>
+            <option value="my_rating">Your rating</option>
+            <option value="tmdb_rating">TMDB rating</option>
+            <option value="name">Name</option>
+          </select>
+          <button class="sort-dir-btn" id="genreDirBtn">↓</button>
+        </div>
       </div>
+      <div class="people-list" id="genreList"></div>
     </div>`;
+
+  renderList();
+  document.getElementById('genreSortSelect').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
+  document.getElementById('genreDirBtn').addEventListener('click', () => { dir *= -1; renderList(); });
 }
 
 // ============================================================
@@ -467,30 +688,53 @@ function viewPeople(role, title) {
   let query    = '';
   let page     = 1;
   let pageSize = 25;
+  let sortBy   = 'count';
+  let dir      = 1;
 
   mc.innerHTML = `
     <div class="view-list">
       <div class="list-controls">
-        <div class="search-wrap">
+        <div class="search-view-row">
           <input type="text" class="search-input" id="peopleSearch" placeholder="Search…" autocomplete="off">
-        </div>
-        <div class="sort-wrap">
           <select class="sort-select" id="pageSizeSelect">
-            <option value="25">25 per page</option>
-            <option value="50">50 per page</option>
-            <option value="100">100 per page</option>
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
           </select>
         </div>
+        <div class="subfilter-row">
+          <select class="sort-select" id="peopleSortSelect">
+            <option value="count">Titles</option>
+            <option value="my_rating">Your rating</option>
+            <option value="tmdb_rating">TMDB rating</option>
+            <option value="runtime">Watch time</option>
+            <option value="name">Name</option>
+          </select>
+          <button class="sort-dir-btn" id="peopleDirBtn">↓</button>
+        </div>
       </div>
+      <p class="muted-text" style="font-size:.78rem">Ratings are averages of their films in this watchlist, not a rating of the person.</p>
       <div class="result-count" id="peopleCount"></div>
       <div class="people-list" id="peopleList"></div>
       <div class="pagination" id="pagination"></div>
     </div>`;
 
+  function applySorted(rows) {
+    return [...rows].sort((a, b) => {
+      if (sortBy === 'count')       return (b.count - a.count) * dir;
+      if (sortBy === 'my_rating')   return ((Number(b.avg)||0) - (Number(a.avg)||0)) * dir;
+      if (sortBy === 'tmdb_rating') return ((Number(b.tmdbAvg)||0) - (Number(a.tmdbAvg)||0)) * dir;
+      if (sortBy === 'runtime')     return (b.runtime - a.runtime) * dir;
+      if (sortBy === 'name')        return a.name.localeCompare(b.name) * dir;
+      return 0;
+    });
+  }
+
   function filtered() {
-    if (!query) return allRows;
-    const q = query.toLowerCase();
-    return allRows.filter(r => r.name.toLowerCase().includes(q));
+    const base = query
+      ? allRows.filter(r => r.name.toLowerCase().includes(query.toLowerCase()))
+      : allRows;
+    return applySorted(base);
   }
 
   function render() {
@@ -508,17 +752,22 @@ function viewPeople(role, title) {
       const hours  = Math.round(r.runtime / 60);
       return `
         <a href="#person-${r.tmdb_person_id}" class="people-row">
-          <div class="people-rank-col">
-            <span class="people-rank">${start + i + 1}</span>
-            ${avatar
-              ? `<img src="${avatar}" class="people-avatar" alt="${esc(r.name)}" loading="lazy">`
-              : `<div class="people-avatar people-avatar--placeholder">${r.name[0]}</div>`}
+          <span class="people-rank">${start + i + 1}</span>
+          ${avatar
+            ? `<img src="${avatar}" class="people-avatar" alt="${esc(r.name)}" loading="lazy">`
+            : `<div class="people-avatar people-avatar--placeholder">${r.name[0]}</div>`}
+          <div class="people-row-content">
             <span class="people-name">${esc(r.name)}</span>
-          </div>
-          <div class="people-stats-col">
-            ${r.avg ? `<span class="rating-badge">${r.avg}</span>` : ''}
-            <span class="people-count">${r.count} title${r.count !== 1 ? 's' : ''}</span>
-            ${hours > 0 ? `<span class="people-time">${hours}h</span>` : ''}
+            <div class="people-stats-col">
+              <div class="people-stats-left">
+                <span class="people-count">${r.count} title${r.count !== 1 ? 's' : ''}</span>
+                ${hours > 0 ? `<span class="people-time">${hours}h</span>` : ''}
+              </div>
+              <div class="people-stats-right">
+                ${r.avg ? `<span class="dual-rating dual-rating--you"><span class="rating-lbl">you</span><span class="rating-num">${r.avg}</span></span>` : ''}
+                ${r.tmdbAvg ? `<span class="dual-rating dual-rating--tmdb"><span class="rating-lbl">tmdb</span><span class="rating-num">${r.tmdbAvg}</span></span>` : ''}
+              </div>
+            </div>
           </div>
         </a>`;
     }).join('');
@@ -541,7 +790,20 @@ function viewPeople(role, title) {
 
   document.getElementById('pageSizeSelect').addEventListener('change', e => {
     pageSize = Number(e.target.value);
-    page     = 1;
+    page = 1;
+    render();
+  });
+
+  document.getElementById('peopleSortSelect').addEventListener('change', e => {
+    sortBy = e.target.value;
+    page   = 1;
+    render();
+  });
+
+  document.getElementById('peopleDirBtn').addEventListener('click', () => {
+    dir *= -1;
+    document.getElementById('peopleDirBtn').textContent = dir === 1 ? '↓' : '↑';
+    page = 1;
     render();
   });
 
@@ -553,7 +815,14 @@ function viewPeople(role, title) {
 // ============================================================
 function viewTimeline() {
   setTitle('Timeline');
-  const years   = [...DB.years.entries()].sort((a, b) => a[0] - b[0]);
+  const sparseYears = [...DB.years.entries()].sort((a, b) => a[0] - b[0]);
+  // Fill every year between min and max so gaps show as empty bars, not missing
+  const minYear = sparseYears[0][0];
+  const maxYear = sparseYears[sparseYears.length - 1][0];
+  const years = [];
+  for (let y = minYear; y <= maxYear; y++) {
+    years.push([y, DB.years.get(y) || []]);
+  }
   const decadeMap = new Map();
   for (const [year, entries] of years) {
     const d = Math.floor(year / 10) * 10;
@@ -565,44 +834,101 @@ function viewTimeline() {
   document.getElementById('mainContent').innerHTML = `
     <div class="view-home">
       <div class="section">
-        <h2 class="section-title">By Decade</h2>
-        <div class="chart-wrap chart-wrap--bar"><canvas id="chartDecades"></canvas></div>
-      </div>
-      <div class="section">
-        <h2 class="section-title">By Year</h2>
-        <div class="chart-wrap chart-wrap--tall"><canvas id="chartYears"></canvas></div>
+        <button class="charts-toggle" id="chartsToggle">
+          <span id="chartsToggleLabel">Charts</span> <span id="chartsToggleArrow">▾</span>
+        </button>
+        <div id="chartsSection" class="charts-section">
+          <h2 class="section-title" style="margin-top:16px">By Decade</h2>
+          <div class="chart-wrap chart-wrap--bar"><canvas id="chartDecades"></canvas></div>
+          <h2 class="section-title" style="margin-top:24px">By Year</h2>
+          <div class="chart-scroll-outer">
+            <div class="chart-scroll-inner" style="min-width:${Math.max(100, years.length * 8)}px">
+              <canvas id="chartYears"></canvas>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="section">
         <h2 class="section-title">Browse by Decade</h2>
         <div class="people-list">
-          ${decades.map(([decade, entries]) => `
-            <a href="#decade-${decade}" class="people-row">
-              <div class="people-rank-col"><span class="people-name">${decade}s</span></div>
-              <div class="people-stats-col">
-                ${avgRating(entries) ? `<span class="rating-badge">${avgRating(entries)}</span>` : ''}
-                <span class="people-count">${entries.length} titles</span>
-              </div>
-            </a>`).join('')}
+          ${decades.map(([decade, entries]) => {
+            const myAvg   = avgRating(entries);
+            const tmdbRated = entries.filter(e => e.vote_average > 0);
+            const tmdbAvg = tmdbRated.length
+              ? (tmdbRated.reduce((s, e) => s + e.vote_average, 0) / tmdbRated.length).toFixed(1)
+              : null;
+            return `
+              <a href="#decade-${decade}" class="people-row">
+                <div class="people-row-content">
+                  <span class="people-name">${decade}s</span>
+                  <div class="people-stats-col">
+                    <div class="people-stats-left">
+                      <span class="people-count">${entries.length} titles</span>
+                    </div>
+                    <div class="people-stats-right">
+                      ${myAvg   ? `<span class="dual-rating dual-rating--you"><span class="rating-lbl">you</span><span class="rating-num">${myAvg}</span></span>` : ''}
+                      ${tmdbAvg ? `<span class="dual-rating dual-rating--tmdb"><span class="rating-lbl">tmdb</span><span class="rating-num">${tmdbAvg}</span></span>` : ''}
+                    </div>
+                  </div>
+                </div>
+              </a>`;
+          }).join('')}
         </div>
       </div>
     </div>`;
 
-  mkChart('chartDecades', {
-    type: 'bar',
-    data: {
-      labels: decades.map(([d]) => `${d}s`),
-      datasets: [{ data: decades.map(([,e]) => e.length), backgroundColor: '#f5c518', borderRadius: 4 }],
-    },
-    options: chartOpts({ xTitle: 'Decade', yTitle: 'Films' }),
-  });
-  mkChart('chartYears', {
-    type: 'bar',
-    data: {
-      labels: years.map(([y]) => y),
-      datasets: [{ data: years.map(([,e]) => e.length), backgroundColor: '#f5c518', borderRadius: 4 }],
-    },
-    options: chartOpts({ xTitle: 'Year', yTitle: 'Films' }),
-  });
+  // Show charts by default on desktop, hidden on mobile
+  const isMobile    = window.innerWidth < 768;
+  let chartsVisible = !isMobile;
+  const chartsSection = document.getElementById('chartsSection');
+  const chartsArrow   = document.getElementById('chartsToggleArrow');
+  let chartsRendered  = false;
+
+  function renderCharts() {
+    if (chartsRendered) return;
+    chartsRendered = true;
+    mkChart('chartDecades', {
+      type: 'bar',
+      data: {
+        labels: decades.map(([d]) => `${d}s`),
+        datasets: [{ data: decades.map(([,e]) => e.length), backgroundColor: '#f5c518', borderRadius: 4 }],
+      },
+      options: chartOpts({ xTitle: 'Decade', yTitle: 'Films', xAutoSkip: true }),
+    });
+    mkChart('chartYears', {
+      type: 'bar',
+      data: {
+        labels: years.map(([y]) => y),
+        datasets: [{ data: years.map(([,e]) => e.length), backgroundColor: '#f5c518', borderRadius: 4 }],
+      },
+      options: {
+        ...chartOpts({ xTitle: 'Year', yTitle: 'Films', xAutoSkip: false }),
+        scales: {
+          ...chartOpts().scales,
+          x: {
+            ...chartOpts().scales.x,
+            ticks: {
+              color: '#a8a8a8', autoSkip: false, maxRotation: 45,
+              callback: (val, i) => {
+                const y = years[i]?.[0];
+                return y % 10 === 0 ? y : '';
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  function setChartsVisible(visible) {
+    chartsVisible = visible;
+    chartsSection.style.display = visible ? 'block' : 'none';
+    chartsArrow.textContent = visible ? '▴' : '▾';
+    if (visible) renderCharts();
+  }
+
+  document.getElementById('chartsToggle').addEventListener('click', () => setChartsVisible(!chartsVisible));
+  setChartsVisible(chartsVisible);
 }
 
 // ============================================================
@@ -610,42 +936,112 @@ function viewTimeline() {
 // ============================================================
 function viewCountries() {
   setTitle('Countries');
-  const countries = [...DB.countries.entries()]
-    .map(([name, entries]) => ({ name, count: entries.length, avg: avgRating(entries) }))
-    .sort((a, b) => b.count - a.count);
+  let sortBy = 'count';
+  let dir    = 1;
+
+  const allCountries = [...DB.countries.entries()].map(([name, entries]) => {
+    const tmdbRated = entries.filter(e => e.vote_average > 0);
+    return {
+      name,
+      count:   entries.length,
+      avg:     avgRating(entries),
+      tmdbAvg: tmdbRated.length
+        ? (tmdbRated.reduce((s, e) => s + e.vote_average, 0) / tmdbRated.length).toFixed(1)
+        : null,
+    };
+  });
+
+  function getSorted() {
+    return [...allCountries].sort((a, b) => {
+      if (sortBy === 'count')       return (b.count - a.count) * dir;
+      if (sortBy === 'my_rating')   return ((Number(b.avg)||0) - (Number(a.avg)||0)) * dir;
+      if (sortBy === 'tmdb_rating') return ((Number(b.tmdbAvg)||0) - (Number(a.tmdbAvg)||0)) * dir;
+      if (sortBy === 'name')        return a.name.localeCompare(b.name) * dir;
+      return 0;
+    });
+  }
+
+  function renderList() {
+    const countries = getSorted();
+    const btn = document.getElementById('countryDirBtn');
+    if (btn) btn.textContent = dir === 1 ? '↓' : '↑';
+    document.getElementById('countryList').innerHTML = countries.map((c, i) => `
+      <a href="#country-${encodeURIComponent(c.name)}" class="people-row">
+        <span class="people-rank">${i + 1}</span>
+        <div class="people-row-content">
+          <span class="people-name">${esc(c.name)}</span>
+          <div class="people-stats-col">
+            <div class="people-stats-left">
+              <span class="people-count">${c.count} <span class="hbar-pct">${(c.count / total * 100).toFixed(1)}%</span></span>
+            </div>
+            <div class="people-stats-right">
+              ${c.avg ? `<span class="dual-rating dual-rating--you"><span class="rating-lbl">you</span><span class="rating-num">${c.avg}</span></span>` : ''}
+              ${c.tmdbAvg ? `<span class="dual-rating dual-rating--tmdb"><span class="rating-lbl">tmdb</span><span class="rating-num">${c.tmdbAvg}</span></span>` : ''}
+            </div>
+          </div>
+        </div>
+      </a>`).join('');
+  }
+
+  const byCount  = [...allCountries].sort((a, b) => b.count - a.count);
+  const maxCount = byCount[0]?.count || 1;
+
+  const total = DB.watchable.length;
+
+  function renderBarChart() {
+    document.getElementById('countryBarChart').innerHTML = byCount.map(c => {
+      const pct = (c.count / total * 100).toFixed(1);
+      return `
+        <a href="#country-${encodeURIComponent(c.name)}" class="hbar-item">
+          <span class="hbar-name">${esc(c.name)}</span>
+          <div class="hbar-row">
+            <div class="hbar-track">
+              <div class="hbar-fill" style="width:${(c.count / maxCount * 100).toFixed(1)}%"></div>
+            </div>
+            <span class="hbar-count">${c.count} <span class="hbar-pct">${pct}%</span></span>
+          </div>
+        </a>`;
+    }).join('');
+  }
 
   document.getElementById('mainContent').innerHTML = `
     <div class="view-home">
       <div class="section">
-        <h2 class="section-title">Top 20 Countries</h2>
-        <div class="chart-wrap chart-wrap--hbar"><canvas id="chartCountries"></canvas></div>
+        <button class="charts-toggle" id="countryChartToggle">
+          <span>Overview</span> <span id="countryChartArrow">▾</span>
+        </button>
+        <div id="countryChartSection" class="hbar-chart" style="display:none">
+          <div id="countryBarChart"></div>
+        </div>
       </div>
       <div class="section">
-        <div class="people-list">
-          ${countries.map((c, i) => `
-            <a href="#country-${encodeURIComponent(c.name)}" class="people-row">
-              <div class="people-rank-col">
-                <span class="people-rank">${i + 1}</span>
-                <span class="people-name">${esc(c.name)}</span>
-              </div>
-              <div class="people-stats-col">
-                ${c.avg ? `<span class="rating-badge">${c.avg}</span>` : ''}
-                <span class="people-count">${c.count} titles</span>
-              </div>
-            </a>`).join('')}
+        <div class="list-controls" style="margin-bottom:12px">
+          <div class="subfilter-row">
+            <select class="sort-select" id="countrySortSelect">
+              <option value="count">Titles</option>
+              <option value="my_rating">Your rating</option>
+              <option value="tmdb_rating">TMDB rating</option>
+              <option value="name">Name</option>
+            </select>
+            <button class="sort-dir-btn" id="countryDirBtn">↓</button>
+          </div>
         </div>
+        <div class="people-list" id="countryList"></div>
       </div>
     </div>`;
 
-  const top20 = countries.slice(0, 20);
-  mkChart('chartCountries', {
-    type: 'bar',
-    data: {
-      labels: top20.map(c => c.name),
-      datasets: [{ data: top20.map(c => c.count), backgroundColor: '#f5c518', borderRadius: 4 }],
-    },
-    options: { ...chartOpts({ yTitle: 'Titles' }), indexAxis: 'y' },
+  renderList();
+  renderBarChart();
+
+  let chartOpen = false;
+  document.getElementById('countryChartToggle').addEventListener('click', () => {
+    chartOpen = !chartOpen;
+    document.getElementById('countryChartSection').style.display = chartOpen ? 'block' : 'none';
+    document.getElementById('countryChartArrow').textContent = chartOpen ? '▴' : '▾';
   });
+
+  document.getElementById('countrySortSelect').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
+  document.getElementById('countryDirBtn').addEventListener('click', () => { dir *= -1; renderList(); });
 }
 
 // ============================================================
@@ -851,10 +1247,37 @@ function viewPersonDetail(id) {
     }
   }
 
-  const entries = [...allEntries.values()].sort((a,b) => (b.entry.personal_rating||0) - (a.entry.personal_rating||0));
-  const avg      = avgRating(entries.map(e => e.entry));
-  const hours    = Math.round(totalRuntime(entries.map(e => e.entry)) / 60);
-  const avatar   = imgUrl(person.profile_path, 'w185');
+  const allEntriesSorted = [...allEntries.values()].sort((a,b) => (b.entry.personal_rating||0) - (a.entry.personal_rating||0));
+  const hours  = Math.round(totalRuntime(allEntriesSorted.map(e => e.entry)) / 60);
+  const avatar = imgUrl(person.profile_path, 'w185');
+
+  let activeRole = 'All';
+
+  function getFiltered() {
+    return activeRole === 'All'
+      ? allEntriesSorted
+      : allEntriesSorted.filter(e => e.roles.includes(activeRole));
+  }
+
+  function computeStats(filtered) {
+    const filmEntries  = filtered.map(e => e.entry);
+    const myAvg        = avgRating(filmEntries);
+    const tmdbRated    = filmEntries.filter(e => e.vote_average > 0);
+    const tmdbAvg      = tmdbRated.length
+      ? (tmdbRated.reduce((s, e) => s + e.vote_average, 0) / tmdbRated.length).toFixed(1)
+      : null;
+    return { myAvg, tmdbAvg, count: filtered.length };
+  }
+
+  function renderStats({ myAvg, tmdbAvg, count }) {
+    document.getElementById('personStats').innerHTML = `
+      <div class="rating-block"><div class="rating-value">${count}</div><div class="rating-label">Titles</div></div>
+      ${myAvg  ? `<div class="rating-block"><div class="rating-value accent">${myAvg}</div><div class="rating-label">Your avg</div></div>` : ''}
+      ${tmdbAvg ? `<div class="rating-block"><div class="rating-value">${tmdbAvg}</div><div class="rating-label">TMDB avg</div></div>` : ''}
+      ${hours > 0 ? `<div class="rating-block"><div class="rating-value">${hours}h</div><div class="rating-label">Watch Time</div></div>` : ''}`;
+  }
+
+  const initialStats = computeStats(allEntriesSorted);
 
   document.getElementById('mainContent').innerHTML = `
     <div class="view-detail">
@@ -865,23 +1288,37 @@ function viewPersonDetail(id) {
             : `<div class="person-photo person-photo--placeholder">${person.name[0]}</div>`}
           <div class="person-header-info">
             <h1 class="detail-title">${esc(person.name)}</h1>
-            <div class="person-role-badges">${personRoles.map(r=>`<span class="tag">${r}</span>`).join('')}</div>
-            <div class="detail-ratings">
-              <div class="rating-block"><div class="rating-value">${entries.length}</div><div class="rating-label">Titles</div></div>
-              ${avg ? `<div class="rating-block"><div class="rating-value accent">${avg}</div><div class="rating-label">Avg Rating</div></div>` : ''}
-              ${hours > 0 ? `<div class="rating-block"><div class="rating-value">${hours}h</div><div class="rating-label">Watch Time</div></div>` : ''}
+            <div class="person-role-badges" id="roleFilters">
+              <button class="chip active" data-role="All">All</button>
+              ${personRoles.map(r => `<button class="chip" data-role="${esc(r)}">${esc(r)}</button>`).join('')}
             </div>
+            <div class="detail-ratings" id="personStats"></div>
           </div>
         </div>
         <div class="detail-section">
-          <h2 class="detail-section-title">Filmography (${entries.length})</h2>
-          <div class="poster-grid">${entries.map(({entry}) => posterCard(entry)).join('')}</div>
+          <h2 class="detail-section-title" id="filmographyTitle">Filmography (${allEntriesSorted.length})</h2>
+          <div class="poster-grid" id="filmographyGrid">${allEntriesSorted.map(({entry}) => posterCard(entry)).join('')}</div>
         </div>
         <div class="detail-links">
           <a href="https://www.themoviedb.org/person/${person.tmdb_person_id}" target="_blank" rel="noopener" class="btn btn--outline">View on TMDB</a>
         </div>
       </div>
     </div>`;
+
+  renderStats(initialStats);
+
+  document.getElementById('roleFilters').addEventListener('click', e => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    activeRole = btn.dataset.role;
+    document.querySelectorAll('#roleFilters .chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = getFiltered();
+    const stats    = computeStats(filtered);
+    renderStats(stats);
+    document.getElementById('filmographyTitle').textContent = `Filmography (${filtered.length})`;
+    document.getElementById('filmographyGrid').innerHTML = filtered.map(({entry}) => posterCard(entry)).join('');
+  });
 }
 
 // ============================================================
@@ -954,6 +1391,28 @@ function viewDecadeDetail(decade) {
 }
 
 // ============================================================
+// VIEW: RATED (all entries with a specific personal rating)
+// ============================================================
+function viewRated(rating) {
+  const n       = Number(rating);
+  const entries = DB.watchable.filter(e => e.personal_rating === n)
+                              .sort((a, b) => (b.release_year || 0) - (a.release_year || 0));
+  setTitle(`Rated ${n}/10`);
+  setAction(backBtn());
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="view-detail"><div class="detail-body">
+      <div class="genre-header">
+        <h1 class="detail-title">Rated ${n} / 10</h1>
+        <div class="detail-ratings">
+          <div class="rating-block"><div class="rating-value">${entries.length}</div><div class="rating-label">Titles</div></div>
+        </div>
+      </div>
+      <div class="detail-section"><div class="poster-grid">${entries.map(posterCard).join('')}</div></div>
+    </div></div>`;
+}
+
+// ============================================================
 // BOOTSTRAP
 // ============================================================
 async function main() {
@@ -961,7 +1420,22 @@ async function main() {
     await initData();
     document.getElementById('loading').classList.add('hidden');
     initNav();
-    window.addEventListener('hashchange', handleRoute);
+
+    // Save scroll position per hash so "back" restores where you were
+    const scrollPositions = new Map();
+    window.addEventListener('hashchange', e => {
+      const oldHash = new URL(e.oldURL).hash.slice(1) || 'home';
+      scrollPositions.set(oldHash, window.scrollY);
+
+      handleRoute();
+
+      // Restore saved position if returning to a previously visited hash,
+      // otherwise scroll to top (covers all link clicks, not just navigate())
+      const newHash = window.location.hash.slice(1) || 'home';
+      const saved   = scrollPositions.get(newHash);
+      requestAnimationFrame(() => window.scrollTo(0, saved ?? 0));
+    });
+
     handleRoute();
   } catch (err) {
     console.error(err);
